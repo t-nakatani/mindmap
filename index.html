@@ -57,7 +57,8 @@
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
   .hud { position: absolute; display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-radius: 10px;
     background: var(--hud-bg); border: 1px solid var(--hud-border); backdrop-filter: blur(8px); font-size: 13px; }
-  #toolbar { left: 12px; bottom: 12px; }
+  #toolbar { left: 12px; bottom: 12px; flex-wrap: wrap; max-width: calc(100% - 24px); }
+  #toolbar button { white-space: nowrap; }
   #help { right: 12px; top: 12px; flex-direction: column; align-items: flex-start; gap: 3px; color: var(--muted); font-size: 12px; }
   #help b { color: var(--fg); font-weight: 600; margin-bottom: 2px; }
   #help kbd { font-family: inherit; background: rgba(127,127,127,.15); border-radius: 4px; padding: 0 5px; color: var(--fg); }
@@ -68,6 +69,8 @@
   #layout-group button:disabled, #side-group button:disabled { opacity: .4; cursor: default; border-color: var(--hud-border); }
   .group-label { color: var(--muted); }
   #zoom { min-width: 44px; text-align: center; color: var(--muted); }
+  select { font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--hud-border);
+    background: var(--node-bg); color: var(--fg); max-width: 200px; }
   .sep { width: 1px; height: 18px; background: var(--hud-border); margin: 0 4px; }
 </style>
 </head>
@@ -82,6 +85,9 @@
 <div id="editor" contenteditable="true" spellcheck="false"></div>
 
 <div id="toolbar" class="hud">
+  <select id="map-select" title="マップを切り替える"></select>
+  <button id="btn-add-map">マップを追加</button>
+  <span class="sep"></span>
   <button id="btn-new">新規</button>
   <span class="sep"></span>
   <button id="btn-zoom-out">−</button>
@@ -195,17 +201,66 @@
     for (const n of nodes.values()) { const o = old.get(n.id); if (o) { n.vx = o.vx; n.vy = o.vy; } }
     if (!nodes.has(selectedId)) selectedId = null;
   }
-  // 保存先はサーバーの /api/map。届かないときは localStorage だけに残す。
-  let lastSaved = '', saveTimer = null;
+  // 保存先はサーバーの /api/map?name=<マップ名>。届かないときは localStorage だけに残す。
+  let lastSaved = '', saveTimer = null, mapName = null;
+  const mapSelect = document.getElementById('map-select');
+  function mapQuery() { return mapName ? '?name=' + encodeURIComponent(mapName) : ''; }
   function save() {
     const text = JSON.stringify(serialize());
     try { localStorage.setItem(STORAGE_KEY, text); } catch (e) { /* 保存できない環境では無視 */ }
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       lastSaved = text;
-      fetch('/api/map', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text }).catch(() => {});
+      fetch('/api/map' + mapQuery(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text }).catch(() => {});
     }, 150);
   }
+  function setMapName(name) {
+    mapName = name || null;
+    document.title = mapName ? `${mapName} - Mind Map` : 'Mind Map Prototype';
+    if (mapSelect.value !== (mapName || '')) mapSelect.value = mapName || '';
+  }
+  function renderMaps(list) {
+    mapSelect.innerHTML = '';
+    for (const m of list.maps || []) {
+      const o = document.createElement('option');
+      o.value = m.name;
+      o.textContent = m.title && m.title !== m.name ? `${m.name} — ${m.title}` : m.name;
+      mapSelect.appendChild(o);
+    }
+    mapSelect.value = mapName || list.current || '';
+  }
+  async function refreshMaps() {
+    try { const r = await fetch('/api/maps'); if (r.ok) renderMaps(await r.json()); } catch (e) { /* サーバーなし */ }
+  }
+  // 別のマップに切り替える。取り消し履歴はマップごとなので捨てる。
+  async function switchTo(name) {
+    let data = null;
+    try { const r = await fetch('/api/map?name=' + encodeURIComponent(name)); if (r.ok) data = await r.json(); } catch (e) { /* サーバーなし */ }
+    if (!data || !Array.isArray(data.nodes)) return;
+    if (editingId) { editor.style.display = 'none'; editingId = null; }
+    setMapName(name);
+    undoStack = []; redoStack = [];
+    nodes = new Map();
+    restore(data); lastSaved = JSON.stringify(serialize());
+    selectedId = roots()[0] ? roots()[0].id : null;
+    layout(); syncDom(); fitView();
+  }
+  mapSelect.addEventListener('change', () => {
+    const name = mapSelect.value; mapSelect.blur();
+    if (!name || name === mapName) return;
+    fetch('/api/current', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => {});
+    switchTo(name);
+  });
+  document.getElementById('btn-add-map').addEventListener('click', async () => {
+    const name = (prompt('新しいマップの名前（ファイル名になります）') || '').trim();
+    if (!name) return;
+    try {
+      const r = await fetch('/api/maps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, title: name }) });
+      const body = await r.json();
+      if (!r.ok) { alert(body.error || '作れませんでした'); return; }
+      await refreshMaps(); await switchTo(body.name);
+    } catch (e) { alert('サーバーに届きませんでした'); }
+  });
   async function loadInitial() {
     try { const r = await fetch('/api/map'); if (r.ok) return await r.json(); } catch (e) { /* サーバーなし */ }
     try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch (e) { /* 壊れた保存は無視 */ }
@@ -216,11 +271,17 @@
     let es;
     try { es = new EventSource('/api/events'); } catch (e) { return; }
     es.addEventListener('map', e => {
-      let data;
-      try { data = JSON.parse(JSON.parse(e.data)); } catch (err) { return; }
+      let msg, data;
+      try { msg = JSON.parse(e.data); data = JSON.parse(msg.text); } catch (err) { return; }
+      if (!msg || msg.name !== mapName) return;
       if (!data || !Array.isArray(data.nodes) || JSON.stringify(normalize(data)) === lastSaved) return;
       applyExternal(data);
     });
+    es.addEventListener('current', e => {
+      let name; try { name = JSON.parse(e.data); } catch (err) { return; }
+      if (name && name !== mapName) switchTo(name);
+    });
+    es.addEventListener('maps', e => { try { renderMaps(JSON.parse(e.data)); } catch (err) { /* 無視 */ } });
   }
   function applyExternal(data) {
     if (editingId) { editor.style.display = 'none'; editingId = null; }
@@ -745,6 +806,7 @@
     requestDraw();
   }
   window.addEventListener('keydown', e => {
+    if (e.target === mapSelect) return;
     const meta = e.metaKey || e.ctrlKey;
     if (editingId) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishEdit(); }
@@ -794,8 +856,9 @@
 
   // ---------- 起動 ----------
   loadInitial().then(data => {
-    if (data) { restore(data); lastSaved = JSON.stringify(serialize()); selectedId = roots()[0].id; view = { tx: vw() / 2, ty: vh() / 2, s: 1 }; commit(); fitView(); }
+    if (data) { if (data.name) setMapName(data.name); restore(data); lastSaved = JSON.stringify(serialize()); selectedId = roots()[0].id; view = { tx: vw() / 2, ty: vh() / 2, s: 1 }; commit(); fitView(); }
     else newMap();
+    refreshMaps();
     connectEvents();
   });
 })();

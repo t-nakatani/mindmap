@@ -9,7 +9,7 @@ Node のサーバーと CLI を付けて、エージェントからも同じマ�
 node server.mjs
 ```
 
-ブラウザで http://127.0.0.1:4380 を開く。Node 20 以上。マップは `data/map.json` に保存する。
+ブラウザで http://127.0.0.1:4380 を開く。Node 20 以上。マップは `data/<マップ名>.json` に1つずつ保存し、`data/.current` に今選んでいる名前を持つ。
 
 エージェントや端末からは CLI で操作する。使い方は [AGENTS.md](AGENTS.md) に書いた。
 
@@ -32,13 +32,14 @@ node cli.mjs import outline.md --replace
 - 文字キーで選択中のノードを書き換える。ダブルクリックで編集する。Escape で取り消す。
 - ⌘. か、ノードの外側に出る丸をクリックすると枝を折りたたむ。折りたたんだノードには子孫の数が出る。折りたたんだノードに Tab で子を足すと自動で開く。
 - Delete で削除、⌘Z で取り消し、⌘⇧Z でやり直し、⌘0 で全体を表示する。
+- マップを複数持てる。ツールバー左端のセレクトで切り替え、「マップを追加」で新しいファイルを作る。選択は CLI の `use` と共通で、どちらで切り替えても画面と CLI の対象が揃う。
 - CLI からの変更は SSE で即時に反映され、⌘Z で取り消せる。
 - サーバーがないときは localStorage だけに保存して動く。
 
 ## 中身
 
 - `index.html`: データは `nodes`（Map）。親のないノードが中心ノードで、`dx, dy` が位置。`layout()` が目標位置を決め、`frame()` が表示位置を補間し、`draw()` が SVG を更新する。操作の前に `pushUndo()` で状態を JSON で積む。
-- `server.mjs`: ページの配信、`GET/PUT /api/map`、`GET /api/events`（SSE）。`data/map.json` の変化を見て配る。
+- `server.mjs`: ページの配信、`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`GET /api/events`（SSE）。`data/` の変化を見て配る。
 - `cli.mjs` と `lib/map.mjs`: 名前・ID・経路でノードを指して追加・改名・移動・削除・折りたたみ、Markdown の箇条書きの取り込みと書き出し。
 
 ## まだないもの

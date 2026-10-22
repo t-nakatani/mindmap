@@ -1,7 +1,7 @@
 # エージェント向け: このマインドマップの動かし方
 
 このリポジトリは、ブラウザで動くマインドマップと、それを操作する CLI です。
-エージェントは **CLI だけ** でマップを読み書きします。`data/map.json` を直接編集しないでください。
+エージェントは **CLI だけ** でマップを読み書きします。`data/` の JSON を直接編集しないでください。
 サーバーが動いていれば、CLI の変更はブラウザに即時に反映されます。人がブラウザで動かした内容も同じファイルに入ります。
 
 ## 起動
@@ -10,7 +10,22 @@
 node server.mjs            # http://127.0.0.1:4380 でページとAPIを出す
 ```
 
-ポートは `PORT`、対象ファイルは `MINDMAP_FILE` で変えられます（既定は `data/map.json`）。
+ポートは `PORT`、マップの置き場は `MINDMAP_DIR` で変えられます（既定は `data/`）。
+
+## マップは複数ある
+
+`data/` に `<マップ名>.json` が1つずつ置かれ、画面と CLI は「今選んでいるマップ」（`data/.current`）を対象にします。
+画面のツールバー左端のセレクトと CLI の `use` は同じ選択を動かすので、人が画面で切り替えればエージェントの対象も変わり、逆も同じです。
+
+```sh
+node cli.mjs maps                       # 一覧。* が今選んでいるマップ
+node cli.mjs use 採用計画               # 切り替える（画面も切り替わる）
+node cli.mjs new "採用計画" --map 採用計画   # 新しいマップ（ファイル）を作る。選択は変わらない
+node cli.mjs show --map 採用計画        # どのコマンドも --map で対象だけ変えられる
+```
+
+人が見ているマップを勝手に切り替えないでください。別のマップを触るときは `use` ではなく `--map` を付けます。
+マップ名はファイル名になります。スラッシュと先頭のドットは使えません。
 
 ## まず現状を見る
 
@@ -91,9 +106,9 @@ printf -- '- 法務\n- 技術\n' | node cli.mjs import - --under リスク   # �
 ## 中身（変更するとき）
 
 - `index.html`: ページ。1ファイルで依存なし。保存先は `/api/map`、変更は `/api/events`（SSE）で受ける。
-- `server.mjs`: ページの配信、`GET/PUT /api/map`、SSE。`data/map.json` の変化を見て配る。
+- `server.mjs`: ページの配信、`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、SSE（map / current / maps）。`data/` の変化を見て配る。
 - `cli.mjs`: コマンドの入口。
 - `lib/map.mjs`: ファイル入出力、ノードの解決、追加・移動・削除、箇条書きの読み書き。サーバーと CLI が共有する。
-- `data/map.json`: 正本。`{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }] }`。
+- `data/<マップ名>.json`: 正本。`{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }] }`。`data/.current` が今選んでいるマップ名。
   `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置、`layout` は配置（`both`・`right`・`left`、省略時は `both`）。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
   中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。
