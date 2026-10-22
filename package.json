@@ -1,0 +1,14 @@
+{
+  "name": "mindmap-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MindNode 風のマインドマップ試作。ブラウザのページと、エージェント向けの CLI。",
+  "scripts": {
+    "start": "node server.mjs",
+    "cli": "node cli.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

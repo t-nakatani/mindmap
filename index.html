@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mind Map Prototype</title>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --fg: #1f2328;
+    --node-bg: #ffffff;
+    --node-border: #cfcbc2;
+    --sel: #2f6feb;
+    --muted: #6b7280;
+    --hud-bg: rgba(255, 255, 255, 0.88);
+    --hud-border: rgba(0, 0, 0, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1c20;
+      --fg: #e8e8ea;
+      --node-bg: #2a2b31;
+      --node-border: #45474f;
+      --sel: #6ea2ff;
+      --muted: #9ca3af;
+      --hud-bg: rgba(32, 33, 38, 0.9);
+      --hud-border: rgba(255, 255, 255, 0.1);
+    }
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; overflow: hidden; }
+  #canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #canvas.panning { cursor: grabbing; }
+  .node { cursor: default; }
+  .node rect { fill: var(--node-bg); stroke: var(--node-border); stroke-width: 1.5; transition: stroke .12s; }
+  .node.selected rect { stroke: var(--sel) !important; stroke-width: 2.5; }
+  .node.drop-target rect { stroke: var(--sel) !important; stroke-width: 2.5; stroke-dasharray: 6 4; }
+  .node.dragging { opacity: .9; }
+  .node text { fill: var(--fg); font-size: 15px; pointer-events: none; user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
+  .node.root text { font-size: 18px; font-weight: 600; }
+  .node.root rect { stroke-width: 2; }
+  .node.editing text { visibility: hidden; }
+  .node .pin { display: none; }
+  .node.pinned .pin { display: block; }
+  .node.hidden, .link.hidden { display: none; }
+  .toggle { cursor: pointer; }
+  .toggle circle { fill: var(--node-bg); stroke-width: 1.5; }
+  .toggle text { font-size: 11px; font-weight: 600; pointer-events: none; user-select: none; fill: var(--fg); }
+  .toggle .dash { stroke-width: 2; stroke-linecap: round; }
+  .node:not(.collapsed) .toggle { opacity: 0; transition: opacity .12s; }
+  .node:not(.collapsed):hover .toggle, .node:not(.collapsed).selected .toggle { opacity: 1; }
+  .node.collapsed .toggle circle { fill: var(--toggle-fill); }
+  .node.collapsed .toggle text { fill: #fff; }
+  .link { fill: none; stroke-linecap: round; }
+  #editor { position: absolute; left: 0; top: 0; transform-origin: 0 0; outline: none; white-space: pre;
+    line-height: 1.2; min-width: 4px; background: transparent; color: var(--fg); display: none; caret-color: var(--sel);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
+  .hud { position: absolute; display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-radius: 10px;
+    background: var(--hud-bg); border: 1px solid var(--hud-border); backdrop-filter: blur(8px); font-size: 13px; }
+  #toolbar { left: 12px; bottom: 12px; }
+  #help { right: 12px; top: 12px; flex-direction: column; align-items: flex-start; gap: 3px; color: var(--muted); font-size: 12px; }
+  #help b { color: var(--fg); font-weight: 600; margin-bottom: 2px; }
+  #help kbd { font-family: inherit; background: rgba(127,127,127,.15); border-radius: 4px; padding: 0 5px; color: var(--fg); }
+  button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--hud-border);
+    background: var(--node-bg); color: var(--fg); cursor: pointer; }
+  button:hover { border-color: var(--sel); }
+  #zoom { min-width: 44px; text-align: center; color: var(--muted); }
+  .sep { width: 1px; height: 18px; background: var(--hud-border); margin: 0 4px; }
+</style>
+</head>
+<body>
+<svg id="canvas" xmlns="http://www.w3.org/2000/svg">
+  <g id="world">
+    <g id="links"></g>
+    <g id="nodes"></g>
+  </g>
+</svg>
+<div id="editor" contenteditable="true" spellcheck="false"></div>
+
+<div id="toolbar" class="hud">
+  <button id="btn-new">新規</button>
+  <span class="sep"></span>
+  <button id="btn-zoom-out">−</button>
+  <span id="zoom">100%</span>
+  <button id="btn-zoom-in">＋</button>
+  <button id="btn-fit">全体を表示</button>
+  <span class="sep"></span>
+  <button id="btn-auto-sel">選択を自動配置に戻す</button>
+  <button id="btn-auto-all">すべて自動配置に戻す</button>
+</div>
+
+<div id="help" class="hud">
+  <b>操作</b>
+  <span><kbd>Tab</kbd> 子ノードを追加</span>
+  <span><kbd>Enter</kbd> 兄弟ノードを追加（中心では子）</span>
+  <span><kbd>文字キー</kbd> 選択中のノードを書き換え</span>
+  <span><kbd>ダブルクリック</kbd> 文字を編集</span>
+  <span><kbd>Delete</kbd> ノードを削除</span>
+  <span><kbd>⌘.</kbd> 枝を折りたたむ / 開く（端の丸でも）</span>
+  <span><kbd>矢印</kbd> ノード間を移動</span>
+  <span>ドラッグで位置を固定、別のノードに重ねて付け替え</span>
+  <span>背景ドラッグ・スクロールで移動、ピンチ / <kbd>⌘</kbd>+スクロールで拡大縮小</span>
+  <span><kbd>⌘Z</kbd> 取り消し　<kbd>⌘0</kbd> 全体を表示</span>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif';
+  const PALETTE = ['#e4572e', '#e9a21a', '#3fa34d', '#1f9e8f', '#2f6feb', '#7c5cde', '#c63fb5', '#e0456f'];
+  const NODE_H = 34, ROOT_H = 46, PAD = 14, ROOT_PAD = 20, HGAP = 56, VGAP = 14, MIN_W = 44;
+  const STORAGE_KEY = 'mindmap-prototype-v1';
+
+  const svg = document.getElementById('canvas');
+  const world = document.getElementById('world');
+  const linksG = document.getElementById('links');
+  const nodesG = document.getElementById('nodes');
+  const editor = document.getElementById('editor');
+  const zoomLabel = document.getElementById('zoom');
+  const meas = document.createElement('canvas').getContext('2d');
+  const vw = () => svg.getBoundingClientRect().width;
+  const vh = () => svg.getBoundingClientRect().height;
+
+  let nodes = new Map();
+  let rootId = null;
+  let rootPos = { x: 0, y: 0 };
+  let uid = 1;
+  let selectedId = null;
+  let editingId = null;
+  let editOriginal = '';
+  let view = { tx: 0, ty: 0, s: 1 };
+  let undoStack = [], redoStack = [];
+  let drag = null, pan = null, dropTargetId = null;
+  let animating = false;
+  let hCache = new Map();
+  const nodeEls = new Map(), linkEls = new Map();
+
+  // ---------- データ ----------
+  function makeNode(text, parentId) {
+    return { id: 'n' + (uid++), text, parentId, children: [], side: 'right', pinned: false, dx: 0, dy: 0,
+      colorIndex: 0, collapsed: false, hidden: false, w: MIN_W, h: NODE_H, cx: 0, cy: 0, vx: null, vy: null, depth: 0 };
+  }
+  function serialize() {
+    return { rootId, rootPos, uid, nodes: [...nodes.values()].map(n => ({
+      id: n.id, text: n.text, parentId: n.parentId, children: n.children.slice(), side: n.side,
+      pinned: n.pinned, dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed })) };
+  }
+  function restore(data) {
+    const old = nodes;
+    nodes = new Map();
+    for (const d of data.nodes) {
+      const n = makeNode(d.text, d.parentId);
+      Object.assign(n, { id: d.id, children: d.children.slice(), side: d.side, pinned: d.pinned, dx: d.dx, dy: d.dy, colorIndex: d.colorIndex, collapsed: !!d.collapsed });
+      nodes.set(n.id, n);
+    }
+    rootId = data.rootId; rootPos = { ...data.rootPos }; uid = data.uid;
+    for (const n of nodes.values()) { const o = old.get(n.id); if (o) { n.vx = o.vx; n.vy = o.vy; } }
+    if (!nodes.has(selectedId)) selectedId = null;
+  }
+  // 保存先はサーバーの /api/map。届かないときは localStorage だけに残す。
+  let lastSaved = '', saveTimer = null;
+  function save() {
+    const text = JSON.stringify(serialize());
+    try { localStorage.setItem(STORAGE_KEY, text); } catch (e) { /* 保存できない環境では無視 */ }
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      lastSaved = text;
+      fetch('/api/map', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text }).catch(() => {});
+    }, 150);
+  }
+  async function loadInitial() {
+    try { const r = await fetch('/api/map'); if (r.ok) return await r.json(); } catch (e) { /* サーバーなし */ }
+    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch (e) { /* 壊れた保存は無視 */ }
+    return null;
+  }
+  // CLI など外部からの変更を SSE で受け取り、取り消せる形で取り込む。
+  function connectEvents() {
+    let es;
+    try { es = new EventSource('/api/events'); } catch (e) { return; }
+    es.addEventListener('map', e => {
+      let data;
+      try { data = JSON.parse(JSON.parse(e.data)); } catch (err) { return; }
+      if (!data || !data.rootId || JSON.stringify(data) === lastSaved) return;
+      applyExternal(data);
+    });
+  }
+  function applyExternal(data) {
+    if (editingId) { editor.style.display = 'none'; editingId = null; }
+    pushUndo();
+    restore(data);
+    lastSaved = JSON.stringify(serialize());
+    if (!selectedId) selectedId = rootId;
+    layout(); syncDom(); requestDraw();
+  }
+  function pushUndo() { undoStack.push(JSON.stringify(serialize())); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
+  function undo() { if (!undoStack.length) return; finishEdit(); redoStack.push(JSON.stringify(serialize())); restore(JSON.parse(undoStack.pop())); commit(); }
+  function redo() { if (!redoStack.length) return; finishEdit(); undoStack.push(JSON.stringify(serialize())); restore(JSON.parse(redoStack.pop())); commit(); }
+
+  function newMap() {
+    nodes = new Map(); uid = 1; undoStack = []; redoStack = [];
+    const root = makeNode('中心テーマ', null);
+    nodes.set(root.id, root); rootId = root.id; rootPos = { x: 0, y: 0 };
+    selectedId = root.id;
+    view = { tx: vw() / 2, ty: vh() / 2, s: 1 };
+    commit();
+  }
+
+  function subtreeIds(n, acc = new Set()) { acc.add(n.id); for (const id of n.children) subtreeIds(nodes.get(id), acc); return acc; }
+  function nextColor() { return nodes.get(rootId).children.length % PALETTE.length; }
+  function colorOf(n) {
+    if (n.id === rootId) return null;
+    let cur = n;
+    while (cur.parentId !== rootId) cur = nodes.get(cur.parentId);
+    return PALETTE[cur.colorIndex % PALETTE.length];
+  }
+
+  // ---------- 変更操作 ----------
+  function commit() { save(); layout(); syncDom(); requestDraw(); }
+
+  function addChild(parentId, text = '') {
+    const p = nodes.get(parentId); if (!p) return;
+    pushUndo();
+    p.collapsed = false;
+    const n = makeNode(text, parentId);
+    if (parentId === rootId) {
+      const kids = p.children.map(id => nodes.get(id));
+      const right = kids.filter(k => k.side === 'right').length;
+      n.side = right <= kids.length - right ? 'right' : 'left';
+      n.colorIndex = nextColor();
+    }
+    nodes.set(n.id, n); p.children.push(n.id);
+    selectedId = n.id; commit(); startEdit(n.id, null, true);
+  }
+  function addSibling(id) {
+    const n = nodes.get(id); if (!n) return;
+    if (id === rootId) return addChild(rootId);
+    pushUndo();
+    const p = nodes.get(n.parentId);
+    const s = makeNode('', p.id);
+    s.side = n.side;
+    if (p.id === rootId) s.colorIndex = nextColor();
+    nodes.set(s.id, s);
+    p.children.splice(p.children.indexOf(id) + 1, 0, s.id);
+    selectedId = s.id; commit(); startEdit(s.id, null, true);
+  }
+  function deleteNode(id, recordUndo = true) {
+    const n = nodes.get(id); if (!n || id === rootId) return;
+    if (recordUndo) pushUndo();
+    const p = nodes.get(n.parentId);
+    const idx = p.children.indexOf(id);
+    for (const sid of subtreeIds(n)) nodes.delete(sid);
+    p.children.splice(idx, 1);
+    selectedId = p.children[idx] || p.children[idx - 1] || p.id;
+    commit();
+  }
+  function reparent(id, newParentId) {
+    const n = nodes.get(id), np = nodes.get(newParentId);
+    if (!n || !np || subtreeIds(n).has(newParentId)) return;
+    pushUndo();
+    const op = nodes.get(n.parentId);
+    op.children.splice(op.children.indexOf(id), 1);
+    n.parentId = newParentId; np.children.push(id);
+    n.pinned = false; n.dx = 0; n.dy = 0;
+    if (newParentId === rootId) { n.side = n.cx < np.cx ? 'left' : 'right'; n.colorIndex = nextColor(); }
+    commit();
+  }
+  function unpin(id) {
+    const n = nodes.get(id); if (!n || !n.pinned) return;
+    pushUndo(); n.pinned = false; n.dx = 0; n.dy = 0;
+    if (n.parentId === rootId) n.side = n.cx < nodes.get(rootId).cx ? 'left' : 'right';
+    commit();
+  }
+  function unpinAll() {
+    const pinned = [...nodes.values()].filter(n => n.pinned);
+    if (!pinned.length) return;
+    pushUndo();
+    for (const n of pinned) { n.pinned = false; n.dx = 0; n.dy = 0; if (n.parentId === rootId) n.side = n.cx < nodes.get(rootId).cx ? 'left' : 'right'; }
+    commit();
+  }
+
+  function toggleCollapse(id) {
+    const n = nodes.get(id);
+    if (!n || id === rootId || !n.children.length) return;
+    pushUndo();
+    n.collapsed = !n.collapsed;
+    if (n.collapsed && selectedId && subtreeIds(n).has(selectedId)) selectedId = id;
+    commit();
+  }
+  function descendantCount(n) { let c = 0; for (const id of n.children) c += 1 + descendantCount(nodes.get(id)); return c; }
+
+  // ---------- レイアウト ----------
+  function measure(n) {
+    const root = n.id === rootId;
+    meas.font = (root ? '600 18px ' : '15px ') + FONT_FAMILY;
+    const tw = meas.measureText(n.text).width;
+    const pad = root ? ROOT_PAD : PAD;
+    n.w = Math.max(MIN_W, Math.ceil(tw) + pad * 2);
+    n.h = root ? ROOT_H : NODE_H;
+  }
+  function subH(n) {
+    if (hCache.has(n.id)) return hCache.get(n.id);
+    const kids = n.collapsed ? [] : n.children.map(id => nodes.get(id)).filter(k => !k.pinned);
+    let h = n.h;
+    if (kids.length) {
+      let s = 0; for (const k of kids) s += subH(k);
+      h = Math.max(n.h, s + VGAP * (kids.length - 1));
+    }
+    hCache.set(n.id, h); return h;
+  }
+  function placeStack(parent, kids, dir) {
+    const total = kids.reduce((a, k) => a + subH(k), 0) + VGAP * Math.max(0, kids.length - 1);
+    let y = parent.cy - total / 2;
+    for (const k of kids) {
+      const sh = subH(k);
+      k.cy = y + sh / 2;
+      k.cx = parent.cx + dir * (parent.w / 2 + HGAP + k.w / 2);
+      k.depth = parent.depth + 1;
+      y += sh + VGAP;
+      placeChildren(k, dir);
+    }
+  }
+  function placePinned(parent, kids, dirDefault) {
+    for (const k of kids) {
+      k.cx = parent.cx + k.dx; k.cy = parent.cy + k.dy; k.depth = parent.depth + 1;
+      placeChildren(k, parent.id === rootId ? (k.dx < 0 ? -1 : 1) : dirDefault);
+    }
+  }
+  function hideSubtree(n) {
+    for (const id of n.children) {
+      const k = nodes.get(id);
+      k.hidden = true; k.cx = n.cx; k.cy = n.cy; k.vx = n.cx; k.vy = n.cy; k.depth = n.depth + 1;
+      hideSubtree(k);
+    }
+  }
+  function placeChildren(n, dir) {
+    if (n.collapsed) { hideSubtree(n); return; }
+    const kids = n.children.map(id => nodes.get(id));
+    placeStack(n, kids.filter(k => !k.pinned), dir);
+    placePinned(n, kids.filter(k => k.pinned), dir);
+  }
+  function layout() {
+    for (const n of nodes.values()) { measure(n); n.hidden = false; }
+    hCache = new Map();
+    const root = nodes.get(rootId);
+    root.cx = rootPos.x; root.cy = rootPos.y; root.depth = 0;
+    const kids = root.children.map(id => nodes.get(id));
+    placeStack(root, kids.filter(k => !k.pinned && k.side === 'right'), 1);
+    placeStack(root, kids.filter(k => !k.pinned && k.side === 'left'), -1);
+    placePinned(root, kids.filter(k => k.pinned), 1);
+  }
+
+  // ---------- 描画 ----------
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs = {}) { const e = document.createElementNS(SVG_NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  function syncDom() {
+    for (const [id, e] of nodeEls) if (!nodes.has(id)) { e.g.remove(); nodeEls.delete(id); }
+    for (const [id, p] of linkEls) if (!nodes.has(id) || !nodes.get(id).parentId) { p.remove(); linkEls.delete(id); }
+    for (const n of nodes.values()) {
+      if (!nodeEls.has(n.id)) {
+        const g = el('g', { class: 'node' }); g.dataset.id = n.id;
+        const rect = el('rect', { rx: 10, ry: 10 });
+        const text = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+        const pin = el('circle', { class: 'pin', r: 3.5 });
+        const toggle = el('g', { class: 'toggle' });
+        const tCircle = el('circle', { r: 8 });
+        const tDash = el('line', { class: 'dash', x1: -3.5, y1: 0, x2: 3.5, y2: 0 });
+        const tText = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+        toggle.append(tCircle, tDash, tText);
+        g.append(rect, text, pin, toggle); nodesG.appendChild(g);
+        nodeEls.set(n.id, { g, rect, text, pin, toggle, tCircle, tDash, tText });
+      }
+      if (n.parentId && !linkEls.has(n.id)) {
+        const p = el('path', { class: 'link' }); linksG.appendChild(p); linkEls.set(n.id, p);
+      }
+    }
+  }
+  function requestDraw() { if (!animating) { animating = true; requestAnimationFrame(frame); } }
+  function initVisuals() {
+    for (const n of nodes.values()) {
+      if (n.vx != null) continue;
+      const p = n.parentId ? nodes.get(n.parentId) : null;
+      n.vx = p && p.vx != null ? p.vx : n.cx; n.vy = p && p.vy != null ? p.vy : n.cy;
+    }
+  }
+  function frame() {
+    let moving = false;
+    initVisuals();
+    for (const n of nodes.values()) {
+      const ddx = n.cx - n.vx, ddy = n.cy - n.vy;
+      if (Math.abs(ddx) > 0.4 || Math.abs(ddy) > 0.4) { n.vx += ddx * 0.28; n.vy += ddy * 0.28; moving = true; }
+      else { n.vx = n.cx; n.vy = n.cy; }
+    }
+    draw();
+    if (moving) requestAnimationFrame(frame); else animating = false;
+  }
+  function draw() {
+    initVisuals();
+    world.setAttribute('transform', `translate(${view.tx},${view.ty}) scale(${view.s})`);
+    zoomLabel.textContent = Math.round(view.s * 100) + '%';
+    for (const n of nodes.values()) {
+      const e = nodeEls.get(n.id);
+      const color = colorOf(n);
+      e.g.setAttribute('transform', `translate(${n.vx - n.w / 2},${n.vy - n.h / 2})`);
+      e.g.setAttribute('class', 'node' + (n.id === rootId ? ' root' : '') + (n.id === selectedId ? ' selected' : '')
+        + (n.id === dropTargetId ? ' drop-target' : '') + (n.id === editingId ? ' editing' : '')
+        + (n.pinned ? ' pinned' : '') + (drag && drag.moved && drag.id === n.id ? ' dragging' : '')
+        + (n.hidden ? ' hidden' : '') + (n.collapsed ? ' collapsed' : ''));
+      e.rect.setAttribute('width', n.w); e.rect.setAttribute('height', n.h);
+      if (color) e.rect.style.stroke = color; else e.rect.style.stroke = '';
+      e.text.setAttribute('x', n.w / 2); e.text.setAttribute('y', n.h / 2);
+      if (e.text.textContent !== n.text) e.text.textContent = n.text;
+      e.pin.setAttribute('cx', n.w); e.pin.setAttribute('cy', 0); e.pin.setAttribute('fill', color || 'var(--muted)');
+      if (n.parentId && n.children.length) {
+        const p = nodes.get(n.parentId);
+        const d = p.cx <= n.cx ? 1 : -1;
+        e.toggle.style.display = '';
+        e.toggle.setAttribute('transform', `translate(${d === 1 ? n.w + 12 : -12},${n.h / 2})`);
+        e.tCircle.style.stroke = color; e.tDash.style.stroke = color;
+        e.g.style.setProperty('--toggle-fill', color);
+        if (n.collapsed) { e.tDash.style.display = 'none'; e.tText.textContent = String(descendantCount(n)); }
+        else { e.tDash.style.display = ''; e.tText.textContent = ''; }
+      } else e.toggle.style.display = 'none';
+      if (n.parentId) {
+        const p = nodes.get(n.parentId), path = linkEls.get(n.id);
+        path.classList.toggle('hidden', n.hidden);
+        const d = p.vx <= n.vx ? 1 : -1;
+        const x1 = p.vx + d * p.w / 2, y1 = p.vy, x2 = n.vx - d * n.w / 2, y2 = n.vy;
+        const mx = (x1 + x2) / 2;
+        path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+        path.setAttribute('stroke', color);
+        path.setAttribute('stroke-width', Math.max(1.5, 5 - n.depth * 1.2));
+      }
+    }
+    if (editingId) {
+      const n = nodes.get(editingId);
+      const root = n.id === rootId, fs = root ? 18 : 15, pad = root ? ROOT_PAD : PAD;
+      const wx = n.vx - n.w / 2 + pad, wy = n.vy - fs * 0.6;
+      editor.style.fontSize = fs + 'px'; editor.style.fontWeight = root ? '600' : '400';
+      editor.style.transform = `translate(${view.tx + view.s * wx}px, ${view.ty + view.s * wy}px) scale(${view.s})`;
+    }
+  }
+
+  // ---------- 編集 ----------
+  function startEdit(id, replaceWith = null, fresh = false) {
+    finishEdit();
+    const n = nodes.get(id); if (!n) return;
+    pushUndo();
+    editingId = id; editOriginal = fresh ? '' : n.text;
+    if (replaceWith !== null) n.text = replaceWith;
+    editor.textContent = n.text;
+    editor.style.display = 'block';
+    layout(); draw();
+    editor.focus();
+    const range = document.createRange(); range.selectNodeContents(editor); range.collapse(false);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    requestDraw();
+  }
+  function finishEdit() {
+    if (!editingId) return;
+    const n = nodes.get(editingId);
+    editor.style.display = 'none';
+    editingId = null;
+    if (!n) return;
+    n.text = editor.textContent.replace(/[\r\n]/g, '').trim();
+    if (n.text === editOriginal) undoStack.pop();
+    commit();
+  }
+  function cancelEdit() {
+    if (!editingId) return;
+    const n = nodes.get(editingId);
+    editor.style.display = 'none'; editingId = null;
+    undoStack.pop();
+    if (editOriginal === '' && n.id !== rootId) {
+      // 新規に作って空のままやめた場合は消す。作成時の取り消し記録はそのまま残す。
+      deleteNode(n.id, false); return;
+    }
+    n.text = editOriginal; commit();
+  }
+  editor.addEventListener('input', () => {
+    if (!editingId) return;
+    nodes.get(editingId).text = editor.textContent.replace(/[\r\n]/g, '');
+    layout(); requestDraw();
+  });
+  editor.addEventListener('blur', () => finishEdit());
+
+  // ---------- 座標 ----------
+  function toWorld(clientX, clientY) {
+    const r = svg.getBoundingClientRect();
+    return { x: (clientX - r.left - view.tx) / view.s, y: (clientY - r.top - view.ty) / view.s };
+  }
+  function zoomAt(clientX, clientY, factor) {
+    const r = svg.getBoundingClientRect();
+    const px = clientX - r.left, py = clientY - r.top;
+    const ns = Math.min(3, Math.max(0.2, view.s * factor));
+    view.tx = px - (px - view.tx) * (ns / view.s); view.ty = py - (py - view.ty) * (ns / view.s); view.s = ns;
+    requestDraw();
+  }
+  function fitView() {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nodes.values()) {
+      if (n.hidden) continue;
+      minX = Math.min(minX, n.cx - n.w / 2); maxX = Math.max(maxX, n.cx + n.w / 2);
+      minY = Math.min(minY, n.cy - n.h / 2); maxY = Math.max(maxY, n.cy + n.h / 2);
+    }
+    const W = vw(), H = vh();
+    const s = Math.min(1.5, (W - 120) / Math.max(1, maxX - minX), (H - 120) / Math.max(1, maxY - minY));
+    view.s = Math.max(0.2, s);
+    view.tx = W / 2 - view.s * (minX + maxX) / 2; view.ty = H / 2 - view.s * (minY + maxY) / 2;
+    requestDraw();
+  }
+
+  // ---------- ドラッグ・パン ----------
+  function findDropTarget(n) {
+    const sub = subtreeIds(n);
+    let best = null, bestD = Infinity;
+    const M = 24;
+    for (const c of nodes.values()) {
+      if (sub.has(c.id) || c.hidden) continue;
+      const inside = n.cx >= c.cx - c.w / 2 - M && n.cx <= c.cx + c.w / 2 + M && n.cy >= c.cy - c.h / 2 - M && n.cy <= c.cy + c.h / 2 + M;
+      if (!inside) continue;
+      const d = Math.hypot(c.cx - n.cx, c.cy - n.cy);
+      if (d < bestD) { bestD = d; best = c.id; }
+    }
+    return best;
+  }
+  svg.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const g = e.target.closest && e.target.closest('.node');
+    const w = toWorld(e.clientX, e.clientY);
+    if (g && e.target.closest('.toggle')) { finishEdit(); toggleCollapse(g.dataset.id); return; }
+    if (g) {
+      const n = nodes.get(g.dataset.id);
+      if (editingId && editingId !== n.id) finishEdit();
+      if (editingId === n.id) return;
+      drag = { id: n.id, startX: e.clientX, startY: e.clientY, grabDX: n.cx - w.x, grabDY: n.cy - w.y, moved: false };
+      selectedId = n.id; requestDraw();
+    } else {
+      finishEdit();
+      pan = { startX: e.clientX, startY: e.clientY, tx: view.tx, ty: view.ty, moved: false };
+      svg.classList.add('panning');
+    }
+    svg.setPointerCapture(e.pointerId);
+  });
+  svg.addEventListener('pointermove', e => {
+    if (drag) {
+      const n = nodes.get(drag.id); if (!n) return;
+      if (!drag.moved) {
+        if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 4) return;
+        drag.moved = true; pushUndo();
+      }
+      const w = toWorld(e.clientX, e.clientY);
+      const tx = w.x + drag.grabDX, ty = w.y + drag.grabDY;
+      if (n.id === rootId) { rootPos = { x: tx, y: ty }; }
+      else { const p = nodes.get(n.parentId); n.pinned = true; n.dx = tx - p.cx; n.dy = ty - p.cy; }
+      layout(); n.vx = n.cx; n.vy = n.cy;
+      dropTargetId = n.id === rootId ? null : findDropTarget(n);
+      requestDraw();
+    } else if (pan) {
+      if (!pan.moved && Math.hypot(e.clientX - pan.startX, e.clientY - pan.startY) < 3) return;
+      pan.moved = true;
+      view.tx = pan.tx + (e.clientX - pan.startX); view.ty = pan.ty + (e.clientY - pan.startY);
+      requestDraw();
+    }
+  });
+  function endPointer(e) {
+    if (drag) {
+      const n = nodes.get(drag.id);
+      if (drag.moved && n) {
+        if (dropTargetId) {
+          if (dropTargetId === n.parentId) { n.pinned = false; n.dx = 0; n.dy = 0; if (n.parentId === rootId) n.side = n.cx < nodes.get(rootId).cx ? 'left' : 'right'; commit(); }
+          else reparent(n.id, dropTargetId);
+        } else commit();
+      }
+      drag = null; dropTargetId = null; requestDraw();
+    }
+    if (pan) {
+      if (!pan.moved) { selectedId = null; requestDraw(); }
+      pan = null; svg.classList.remove('panning');
+    }
+  }
+  svg.addEventListener('pointerup', endPointer);
+  svg.addEventListener('pointercancel', endPointer);
+  svg.addEventListener('dblclick', e => {
+    const g = e.target.closest && e.target.closest('.node');
+    if (g && !e.target.closest('.toggle')) { e.preventDefault(); startEdit(g.dataset.id); }
+  });
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+    else { view.tx -= e.deltaX; view.ty -= e.deltaY; requestDraw(); }
+  }, { passive: false });
+
+  // ---------- キーボード ----------
+  function navigate(key) {
+    const n = nodes.get(selectedId); if (!n) return;
+    const p = n.parentId ? nodes.get(n.parentId) : null;
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      if (!p) return;
+      const sib = p.children.map(id => nodes.get(id)).filter(k => Math.sign(k.cx - p.cx) === Math.sign(n.cx - p.cx))
+        .sort((a, b) => a.cy - b.cy);
+      const i = sib.indexOf(n);
+      const t = sib[i + (key === 'ArrowDown' ? 1 : -1)];
+      if (t) selectedId = t.id;
+    } else {
+      const dir = key === 'ArrowRight' ? 1 : -1;
+      const kids = n.children.map(id => nodes.get(id)).filter(k => !k.hidden && Math.sign(k.cx - n.cx) === dir)
+        .sort((a, b) => Math.abs(a.cy - n.cy) - Math.abs(b.cy - n.cy));
+      if (kids.length) selectedId = kids[0].id;
+      else if (p && Math.sign(p.cx - n.cx) === dir) selectedId = p.id;
+    }
+    requestDraw();
+  }
+  window.addEventListener('keydown', e => {
+    const meta = e.metaKey || e.ctrlKey;
+    if (editingId) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishEdit(); }
+      else if (e.key === 'Tab') { e.preventDefault(); const id = editingId; finishEdit(); addChild(id); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+      return;
+    }
+    if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1.2); return; }
+    if (meta && e.key === '-') { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1 / 1.2); return; }
+    if (meta && e.key === '0') { e.preventDefault(); fitView(); return; }
+    if (meta && e.key === '.') { e.preventDefault(); if (selectedId) toggleCollapse(selectedId); return; }
+    if (meta) return;
+    if (!selectedId) { if (e.key === 'Tab') { e.preventDefault(); selectedId = rootId; requestDraw(); } return; }
+    switch (e.key) {
+      case 'Tab': e.preventDefault(); addChild(selectedId); break;
+      case 'Enter': e.preventDefault(); addSibling(selectedId); break;
+      case 'Backspace': case 'Delete': e.preventDefault(); deleteNode(selectedId); break;
+      case 'ArrowUp': case 'ArrowDown': case 'ArrowLeft': case 'ArrowRight': e.preventDefault(); navigate(e.key); break;
+      case 'Escape': selectedId = null; requestDraw(); break;
+      case ' ': e.preventDefault(); startEdit(selectedId); break;
+      default:
+        if (e.key.length === 1 && !e.altKey) { e.preventDefault(); startEdit(selectedId, e.key); }
+    }
+  });
+
+  // ---------- ツールバー ----------
+  document.getElementById('btn-new').addEventListener('click', () => {
+    if (nodes.size > 1 && !confirm('いまのマップを消して新しく始めますか？')) return;
+    newMap(); startEdit(rootId);
+  });
+  document.getElementById('btn-zoom-in').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1.2));
+  document.getElementById('btn-zoom-out').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1 / 1.2));
+  document.getElementById('btn-fit').addEventListener('click', fitView);
+  document.getElementById('btn-auto-sel').addEventListener('click', () => selectedId && unpin(selectedId));
+  document.getElementById('btn-auto-all').addEventListener('click', unpinAll);
+  document.querySelectorAll('button').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
+  window.addEventListener('resize', requestDraw);
+
+  // ---------- 起動 ----------
+  loadInitial().then(data => {
+    if (data) { restore(data); lastSaved = JSON.stringify(serialize()); selectedId = rootId; view = { tx: vw() / 2, ty: vh() / 2, s: 1 }; commit(); fitView(); }
+    else newMap();
+    connectEvents();
+  });
+})();
+</script>
+</body>
+</html>
