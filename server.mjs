@@ -9,7 +9,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readMap, writeMap, newMap, DATA_FILE } from './lib/map.mjs';
+import { readMap, writeMap, newMap, normalize, DATA_FILE } from './lib/map.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 4380);
@@ -50,8 +50,8 @@ const server = http.createServer((req, res) => {
     req.on('data', c => { body += c; if (body.length > 5e6) req.destroy(); });
     req.on('end', () => {
       try {
-        const map = JSON.parse(body);
-        if (!map || !map.rootId || !Array.isArray(map.nodes)) return json(res, 400, { error: 'rootId と nodes が必要です' });
+        const map = normalize(JSON.parse(body));
+        if (!map || !Array.isArray(map.nodes) || !map.nodes.some(n => !n.parentId)) return json(res, 400, { error: '中心ノードを含む nodes が必要です' });
         writeMap(map);
         lastSent = fs.readFileSync(DATA_FILE, 'utf8');
         // 書いた本人以外にも同じ内容を配る（本人は内容が同じなので無視する）

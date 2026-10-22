@@ -19,19 +19,22 @@ node cli.mjs show
 ```
 
 ```
-- 新規事業の検討  (n1)
+- 新規事業の検討  (n1 中心)
   - 市場  (n2)
     - 国内  (n3)
   - 予算  (n6 折りたたみ:2)
+- 採用  (n10 中心)
 ```
 
-括弧の中が ID です。`固定` は人がドラッグで置いた位置、`折りたたみ:N` は閉じていて子孫が N 件ある印です。
+括弧の中が ID です。`中心` は中心ノード、`固定` は人がドラッグで置いた位置、`折りたたみ:N` は閉じていて子孫が N 件ある印です。
+
+中心ノードは複数置けます。中心ノードごとに独立したマップになり、キャンバスに並びます。
 
 ## ノードの指し方
 
 - ID: `n6`
 - 完全一致の名前: `予算`
-- 経路: `市場/海外/北米`（中心ノードの名前は省く）
+- 経路: `新規事業の検討/市場/海外/北米`（中心ノードの名前は省ける）
 
 同じ名前が複数あると CLI がエラーで候補を出すので、ID か経路で指定し直してください。
 
@@ -46,13 +49,17 @@ node cli.mjs remove 広告費                               # 子ごと消す
 node cli.mjs collapse 市場                               # 枝を閉じる
 node cli.mjs expand 市場
 node cli.mjs export                                      # Markdown で書き出す（ID なし）
+node cli.mjs add "採用" --root                           # 新しい中心ノード（独立したマップ）を足す
+node cli.mjs move 市場 --root                            # 枝を切り離して独立したマップにする
+node cli.mjs move 採用 --under 予算                      # 中心ノードを別のマップの枝にする
 ```
 
-`add` と `move` で `--under` を省くと中心ノードの下になります。
+`add` で `--under` を省くと、中心ノードが1つのときはその下に入ります。中心ノードが複数あるときは `--under` か `--root` が必要です。
 
 ## まとめて入れる: Markdown の箇条書き
 
 骨組みを一気に作るときは、箇条書きを書いて取り込みます。インデント（スペース2つ以上かタブ）が階層です。`-`、`*`、`+`、`1.` を使えます。
+`# 見出し` は中心ノードになり、その下の箇条書きが子になります。見出しを複数書くと、マップが複数できます。
 
 ```sh
 cat > /tmp/outline.md <<'EOF'
@@ -63,7 +70,8 @@ cat > /tmp/outline.md <<'EOF'
 - 予算
   - 広告費
 EOF
-node cli.mjs import /tmp/outline.md --replace      # マップを作り直す。「# 見出し」が中心になる
+node cli.mjs import /tmp/outline.md --replace      # すべてのマップを作り直す
+node cli.mjs import /tmp/outline.md                # 見出しがあれば、新しいマップとして足す
 node cli.mjs import /tmp/outline.md --under リスク  # 既存のノードの下に足す
 printf -- '- 法務\n- 技術\n' | node cli.mjs import - --under リスク   # 標準入力からも読める
 ```
@@ -84,4 +92,6 @@ printf -- '- 法務\n- 技術\n' | node cli.mjs import - --under リスク   # �
 - `server.mjs`: ページの配信、`GET/PUT /api/map`、SSE。`data/map.json` の変化を見て配る。
 - `cli.mjs`: コマンドの入口。
 - `lib/map.mjs`: ファイル入出力、ノードの解決、追加・移動・削除、箇条書きの読み書き。サーバーと CLI が共有する。
-- `data/map.json`: 正本。`{ rootId, rootPos, uid, nodes: [{ id, text, parentId, children, side, pinned, dx, dy, colorIndex, collapsed }] }`。
+- `data/map.json`: 正本。`{ uid, nodes: [{ id, text, parentId, children, side, pinned, dx, dy, colorIndex, collapsed }] }`。
+  `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置。ほかのノードの `dx, dy` は固定したときの親からの相対位置。
+  中心ノードが1つだった頃の `rootId`・`rootPos` は、読み込むときに自動で直す。

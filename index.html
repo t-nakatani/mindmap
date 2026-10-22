@@ -94,12 +94,13 @@
   <b>操作</b>
   <span><kbd>Tab</kbd> 子ノードを追加</span>
   <span><kbd>Enter</kbd> 兄弟ノードを追加（中心では子）</span>
+  <span>背景を<kbd>ダブルクリック</kbd> 新しい中心ノード</span>
   <span><kbd>文字キー</kbd> 選択中のノードを書き換え</span>
   <span><kbd>ダブルクリック</kbd> 文字を編集</span>
   <span><kbd>Delete</kbd> ノードを削除</span>
   <span><kbd>⌘.</kbd> 枝を折りたたむ / 開く（端の丸でも）</span>
   <span><kbd>矢印</kbd> ノード間を移動</span>
-  <span>ドラッグで位置を固定、別のノードに重ねて付け替え</span>
+  <span>ドラッグで位置を固定、別のノードに重ねて付け替え（中心は <kbd>Shift</kbd> を押して）</span>
   <span>背景ドラッグ・スクロールで移動、ピンチ / <kbd>⌘</kbd>+スクロールで拡大縮小</span>
   <span><kbd>⌘Z</kbd> 取り消し　<kbd>⌘0</kbd> 全体を表示</span>
 </div>
@@ -109,6 +110,7 @@
   'use strict';
   const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif';
   const PALETTE = ['#e4572e', '#e9a21a', '#3fa34d', '#1f9e8f', '#2f6feb', '#7c5cde', '#c63fb5', '#e0456f'];
+  const MIN_SCALE = 0.1;
   const NODE_H = 34, ROOT_H = 46, PAD = 14, ROOT_PAD = 20, HGAP = 56, VGAP = 14, MIN_W = 44;
   const STORAGE_KEY = 'mindmap-prototype-v1';
 
@@ -122,9 +124,8 @@
   const vw = () => svg.getBoundingClientRect().width;
   const vh = () => svg.getBoundingClientRect().height;
 
+  // 親のないノードが中心ノード。中心ノードはいくつでも置けて、dx, dy がキャンバス上の位置になる。
   let nodes = new Map();
-  let rootId = null;
-  let rootPos = { x: 0, y: 0 };
   let uid = 1;
   let selectedId = null;
   let editingId = null;
@@ -141,12 +142,24 @@
     return { id: 'n' + (uid++), text, parentId, children: [], side: 'right', pinned: false, dx: 0, dy: 0,
       colorIndex: 0, collapsed: false, hidden: false, w: MIN_W, h: NODE_H, cx: 0, cy: 0, vx: null, vy: null, depth: 0 };
   }
+  const isRoot = n => !n.parentId;
+  function roots() { return [...nodes.values()].filter(isRoot); }
   function serialize() {
-    return { rootId, rootPos, uid, nodes: [...nodes.values()].map(n => ({
+    return { uid, nodes: [...nodes.values()].map(n => ({
       id: n.id, text: n.text, parentId: n.parentId, children: n.children.slice(), side: n.side,
       pinned: n.pinned, dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed })) };
   }
+  // 中心ノードが1つだった頃の形式（rootId と rootPos）を、いまの形式に直す。
+  function normalize(data) {
+    if (data && data.rootId) {
+      const r = data.nodes.find(d => d.id === data.rootId);
+      if (r && data.rootPos) { r.dx = data.rootPos.x; r.dy = data.rootPos.y; }
+      delete data.rootId; delete data.rootPos;
+    }
+    return data;
+  }
   function restore(data) {
+    normalize(data);
     const old = nodes;
     nodes = new Map();
     for (const d of data.nodes) {
@@ -154,7 +167,7 @@
       Object.assign(n, { id: d.id, children: d.children.slice(), side: d.side, pinned: d.pinned, dx: d.dx, dy: d.dy, colorIndex: d.colorIndex, collapsed: !!d.collapsed });
       nodes.set(n.id, n);
     }
-    rootId = data.rootId; rootPos = { ...data.rootPos }; uid = data.uid;
+    uid = data.uid;
     for (const n of nodes.values()) { const o = old.get(n.id); if (o) { n.vx = o.vx; n.vy = o.vy; } }
     if (!nodes.has(selectedId)) selectedId = null;
   }
@@ -181,7 +194,7 @@
     es.addEventListener('map', e => {
       let data;
       try { data = JSON.parse(JSON.parse(e.data)); } catch (err) { return; }
-      if (!data || !data.rootId || JSON.stringify(data) === lastSaved) return;
+      if (!data || !Array.isArray(data.nodes) || JSON.stringify(normalize(data)) === lastSaved) return;
       applyExternal(data);
     });
   }
@@ -190,7 +203,6 @@
     pushUndo();
     restore(data);
     lastSaved = JSON.stringify(serialize());
-    if (!selectedId) selectedId = rootId;
     layout(); syncDom(); requestDraw();
   }
   function pushUndo() { undoStack.push(JSON.stringify(serialize())); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
@@ -200,18 +212,18 @@
   function newMap() {
     nodes = new Map(); uid = 1; undoStack = []; redoStack = [];
     const root = makeNode('中心テーマ', null);
-    nodes.set(root.id, root); rootId = root.id; rootPos = { x: 0, y: 0 };
+    nodes.set(root.id, root);
     selectedId = root.id;
     view = { tx: vw() / 2, ty: vh() / 2, s: 1 };
     commit();
   }
 
   function subtreeIds(n, acc = new Set()) { acc.add(n.id); for (const id of n.children) subtreeIds(nodes.get(id), acc); return acc; }
-  function nextColor() { return nodes.get(rootId).children.length % PALETTE.length; }
+  function nextColor(root) { return root.children.length % PALETTE.length; }
   function colorOf(n) {
-    if (n.id === rootId) return null;
+    if (isRoot(n)) return null;
     let cur = n;
-    while (cur.parentId !== rootId) cur = nodes.get(cur.parentId);
+    while (!isRoot(nodes.get(cur.parentId))) cur = nodes.get(cur.parentId);
     return PALETTE[cur.colorIndex % PALETTE.length];
   }
 
@@ -223,29 +235,45 @@
     pushUndo();
     p.collapsed = false;
     const n = makeNode(text, parentId);
-    if (parentId === rootId) {
+    if (isRoot(p)) {
       const kids = p.children.map(id => nodes.get(id));
       const right = kids.filter(k => k.side === 'right').length;
       n.side = right <= kids.length - right ? 'right' : 'left';
-      n.colorIndex = nextColor();
+      n.colorIndex = nextColor(p);
     }
     nodes.set(n.id, n); p.children.push(n.id);
     selectedId = n.id; commit(); startEdit(n.id, null, true);
   }
   function addSibling(id) {
     const n = nodes.get(id); if (!n) return;
-    if (id === rootId) return addChild(rootId);
+    if (isRoot(n)) return addChild(id);
     pushUndo();
     const p = nodes.get(n.parentId);
     const s = makeNode('', p.id);
     s.side = n.side;
-    if (p.id === rootId) s.colorIndex = nextColor();
+    if (isRoot(p)) s.colorIndex = nextColor(p);
     nodes.set(s.id, s);
     p.children.splice(p.children.indexOf(id) + 1, 0, s.id);
     selectedId = s.id; commit(); startEdit(s.id, null, true);
   }
+  // 背景のダブルクリックで、その位置に新しいマップを置く。
+  function addRoot(x, y) {
+    pushUndo();
+    const n = makeNode('', null);
+    n.dx = x; n.dy = y;
+    nodes.set(n.id, n);
+    selectedId = n.id; commit(); startEdit(n.id, null, true);
+  }
   function deleteNode(id, recordUndo = true) {
-    const n = nodes.get(id); if (!n || id === rootId) return;
+    const n = nodes.get(id); if (!n) return;
+    if (isRoot(n)) {
+      // 中心ノードはマップごと消す。最後の1つは残す。
+      if (roots().length === 1) return;
+      if (recordUndo) pushUndo();
+      for (const sid of subtreeIds(n)) nodes.delete(sid);
+      selectedId = null;
+      commit(); return;
+    }
     if (recordUndo) pushUndo();
     const p = nodes.get(n.parentId);
     const idx = p.children.indexOf(id);
@@ -259,29 +287,34 @@
     if (!n || !np || subtreeIds(n).has(newParentId)) return;
     pushUndo();
     const op = nodes.get(n.parentId);
-    op.children.splice(op.children.indexOf(id), 1);
+    if (op) op.children.splice(op.children.indexOf(id), 1);
     n.parentId = newParentId; np.children.push(id);
     n.pinned = false; n.dx = 0; n.dy = 0;
-    if (newParentId === rootId) { n.side = n.cx < np.cx ? 'left' : 'right'; n.colorIndex = nextColor(); }
+    if (isRoot(np)) { n.side = n.cx < np.cx ? 'left' : 'right'; n.colorIndex = nextColor(np); }
     commit();
   }
   function unpin(id) {
     const n = nodes.get(id); if (!n || !n.pinned) return;
     pushUndo(); n.pinned = false; n.dx = 0; n.dy = 0;
-    if (n.parentId === rootId) n.side = n.cx < nodes.get(rootId).cx ? 'left' : 'right';
+    resetSide(n);
     commit();
+  }
+  // 中心ノードの子は、いまの位置が中心の左右どちらにあるかで向きを決め直す。
+  function resetSide(n) {
+    const p = nodes.get(n.parentId);
+    if (isRoot(p)) n.side = n.cx < p.cx ? 'left' : 'right';
   }
   function unpinAll() {
     const pinned = [...nodes.values()].filter(n => n.pinned);
     if (!pinned.length) return;
     pushUndo();
-    for (const n of pinned) { n.pinned = false; n.dx = 0; n.dy = 0; if (n.parentId === rootId) n.side = n.cx < nodes.get(rootId).cx ? 'left' : 'right'; }
+    for (const n of pinned) { n.pinned = false; n.dx = 0; n.dy = 0; resetSide(n); }
     commit();
   }
 
   function toggleCollapse(id) {
     const n = nodes.get(id);
-    if (!n || id === rootId || !n.children.length) return;
+    if (!n || isRoot(n) || !n.children.length) return;
     pushUndo();
     n.collapsed = !n.collapsed;
     if (n.collapsed && selectedId && subtreeIds(n).has(selectedId)) selectedId = id;
@@ -291,7 +324,7 @@
 
   // ---------- レイアウト ----------
   function measure(n) {
-    const root = n.id === rootId;
+    const root = isRoot(n);
     meas.font = (root ? '600 18px ' : '15px ') + FONT_FAMILY;
     const tw = meas.measureText(n.text).width;
     const pad = root ? ROOT_PAD : PAD;
@@ -323,7 +356,7 @@
   function placePinned(parent, kids, dirDefault) {
     for (const k of kids) {
       k.cx = parent.cx + k.dx; k.cy = parent.cy + k.dy; k.depth = parent.depth + 1;
-      placeChildren(k, parent.id === rootId ? (k.dx < 0 ? -1 : 1) : dirDefault);
+      placeChildren(k, isRoot(parent) ? (k.dx < 0 ? -1 : 1) : dirDefault);
     }
   }
   function hideSubtree(n) {
@@ -342,12 +375,13 @@
   function layout() {
     for (const n of nodes.values()) { measure(n); n.hidden = false; }
     hCache = new Map();
-    const root = nodes.get(rootId);
-    root.cx = rootPos.x; root.cy = rootPos.y; root.depth = 0;
-    const kids = root.children.map(id => nodes.get(id));
-    placeStack(root, kids.filter(k => !k.pinned && k.side === 'right'), 1);
-    placeStack(root, kids.filter(k => !k.pinned && k.side === 'left'), -1);
-    placePinned(root, kids.filter(k => k.pinned), 1);
+    for (const root of roots()) {
+      root.cx = root.dx; root.cy = root.dy; root.depth = 0;
+      const kids = root.children.map(id => nodes.get(id));
+      placeStack(root, kids.filter(k => !k.pinned && k.side === 'right'), 1);
+      placeStack(root, kids.filter(k => !k.pinned && k.side === 'left'), -1);
+      placePinned(root, kids.filter(k => k.pinned), 1);
+    }
   }
 
   // ---------- 描画 ----------
@@ -402,7 +436,7 @@
       const e = nodeEls.get(n.id);
       const color = colorOf(n);
       e.g.setAttribute('transform', `translate(${n.vx - n.w / 2},${n.vy - n.h / 2})`);
-      e.g.setAttribute('class', 'node' + (n.id === rootId ? ' root' : '') + (n.id === selectedId ? ' selected' : '')
+      e.g.setAttribute('class', 'node' + (isRoot(n) ? ' root' : '') + (n.id === selectedId ? ' selected' : '')
         + (n.id === dropTargetId ? ' drop-target' : '') + (n.id === editingId ? ' editing' : '')
         + (n.pinned ? ' pinned' : '') + (drag && drag.moved && drag.id === n.id ? ' dragging' : '')
         + (n.hidden ? ' hidden' : '') + (n.collapsed ? ' collapsed' : ''));
@@ -434,7 +468,7 @@
     }
     if (editingId) {
       const n = nodes.get(editingId);
-      const root = n.id === rootId, fs = root ? 18 : 15, pad = root ? ROOT_PAD : PAD;
+      const root = isRoot(n), fs = root ? 18 : 15, pad = root ? ROOT_PAD : PAD;
       const wx = n.vx - n.w / 2 + pad, wy = n.vy - fs * 0.6;
       editor.style.fontSize = fs + 'px'; editor.style.fontWeight = root ? '600' : '400';
       editor.style.transform = `translate(${view.tx + view.s * wx}px, ${view.ty + view.s * wy}px) scale(${view.s})`;
@@ -471,7 +505,7 @@
     const n = nodes.get(editingId);
     editor.style.display = 'none'; editingId = null;
     undoStack.pop();
-    if (editOriginal === '' && n.id !== rootId) {
+    if (editOriginal === '' && (!isRoot(n) || roots().length > 1)) {
       // 新規に作って空のままやめた場合は消す。作成時の取り消し記録はそのまま残す。
       deleteNode(n.id, false); return;
     }
@@ -492,7 +526,7 @@
   function zoomAt(clientX, clientY, factor) {
     const r = svg.getBoundingClientRect();
     const px = clientX - r.left, py = clientY - r.top;
-    const ns = Math.min(3, Math.max(0.2, view.s * factor));
+    const ns = Math.min(3, Math.max(MIN_SCALE, view.s * factor));
     view.tx = px - (px - view.tx) * (ns / view.s); view.ty = py - (py - view.ty) * (ns / view.s); view.s = ns;
     requestDraw();
   }
@@ -505,7 +539,7 @@
     }
     const W = vw(), H = vh();
     const s = Math.min(1.5, (W - 120) / Math.max(1, maxX - minX), (H - 120) / Math.max(1, maxY - minY));
-    view.s = Math.max(0.2, s);
+    view.s = Math.max(MIN_SCALE, s);
     view.tx = W / 2 - view.s * (minX + maxX) / 2; view.ty = H / 2 - view.s * (minY + maxY) / 2;
     requestDraw();
   }
@@ -551,10 +585,11 @@
       }
       const w = toWorld(e.clientX, e.clientY);
       const tx = w.x + drag.grabDX, ty = w.y + drag.grabDY;
-      if (n.id === rootId) { rootPos = { x: tx, y: ty }; }
+      if (isRoot(n)) { n.dx = tx; n.dy = ty; }
       else { const p = nodes.get(n.parentId); n.pinned = true; n.dx = tx - p.cx; n.dy = ty - p.cy; }
       layout(); n.vx = n.cx; n.vy = n.cy;
-      dropTargetId = n.id === rootId ? null : findDropTarget(n);
+      // 中心ノードは Shift を押しながら重ねたときだけ、別のマップの枝になる
+      dropTargetId = isRoot(n) && !e.shiftKey ? null : findDropTarget(n);
       requestDraw();
     } else if (pan) {
       if (!pan.moved && Math.hypot(e.clientX - pan.startX, e.clientY - pan.startY) < 3) return;
@@ -568,7 +603,7 @@
       const n = nodes.get(drag.id);
       if (drag.moved && n) {
         if (dropTargetId) {
-          if (dropTargetId === n.parentId) { n.pinned = false; n.dx = 0; n.dy = 0; if (n.parentId === rootId) n.side = n.cx < nodes.get(rootId).cx ? 'left' : 'right'; commit(); }
+          if (dropTargetId === n.parentId) { n.pinned = false; n.dx = 0; n.dy = 0; resetSide(n); commit(); }
           else reparent(n.id, dropTargetId);
         } else commit();
       }
@@ -584,6 +619,7 @@
   svg.addEventListener('dblclick', e => {
     const g = e.target.closest && e.target.closest('.node');
     if (g && !e.target.closest('.toggle')) { e.preventDefault(); startEdit(g.dataset.id); }
+    else if (!g) { e.preventDefault(); const w = toWorld(e.clientX, e.clientY); addRoot(w.x, w.y); }
   });
   svg.addEventListener('wheel', e => {
     e.preventDefault();
@@ -625,7 +661,7 @@
     if (meta && e.key === '0') { e.preventDefault(); fitView(); return; }
     if (meta && e.key === '.') { e.preventDefault(); if (selectedId) toggleCollapse(selectedId); return; }
     if (meta) return;
-    if (!selectedId) { if (e.key === 'Tab') { e.preventDefault(); selectedId = rootId; requestDraw(); } return; }
+    if (!selectedId) { if (e.key === 'Tab') { e.preventDefault(); selectedId = roots()[0].id; requestDraw(); } return; }
     switch (e.key) {
       case 'Tab': e.preventDefault(); addChild(selectedId); break;
       case 'Enter': e.preventDefault(); addSibling(selectedId); break;
@@ -641,7 +677,7 @@
   // ---------- ツールバー ----------
   document.getElementById('btn-new').addEventListener('click', () => {
     if (nodes.size > 1 && !confirm('いまのマップを消して新しく始めますか？')) return;
-    newMap(); startEdit(rootId);
+    newMap(); startEdit(selectedId);
   });
   document.getElementById('btn-zoom-in').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1.2));
   document.getElementById('btn-zoom-out').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1 / 1.2));
@@ -653,7 +689,7 @@
 
   // ---------- 起動 ----------
   loadInitial().then(data => {
-    if (data) { restore(data); lastSaved = JSON.stringify(serialize()); selectedId = rootId; view = { tx: vw() / 2, ty: vh() / 2, s: 1 }; commit(); fitView(); }
+    if (data) { restore(data); lastSaved = JSON.stringify(serialize()); selectedId = roots()[0].id; view = { tx: vw() / 2, ty: vh() / 2, s: 1 }; commit(); fitView(); }
     else newMap();
     connectEvents();
   });
