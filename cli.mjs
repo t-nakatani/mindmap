@@ -2,7 +2,7 @@
 // マインドマップを名前指定で操作する CLI。正本の data/map.json を直接書き換える。
 // サーバーが動いていれば、ページには自動で反映される。
 import fs from 'node:fs';
-import { readMap, writeMap, newMap, roots, resolve, pathOf, addChild, addRoot, removeNode, moveNode, makeRoot,
+import { readMap, writeMap, newMap, roots, resolve, pathOf, addChild, addRoot, removeNode, moveNode, makeRoot, setLayout, LAYOUTS,
   outline, parseOutline, addTree, addRoots, subtree, DATA_FILE } from './lib/map.mjs';
 
 const USAGE = `使い方: node cli.mjs <コマンド> [引数] [オプション]
@@ -18,6 +18,8 @@ const USAGE = `使い方: node cli.mjs <コマンド> [引数] [オプション]
   move <ノード> --root                 枝を切り離して、独立したマップにする
   remove <ノード>                      ノードを子ごと消す
   collapse <ノード> / expand <ノード>  枝を折りたたむ / 開く
+  layout <中心ノード> <both|right|left>
+                                       マップの配置を両側・右だけ・左だけにする
   import <ファイル|-> [--under <ノード> | --root] [--replace]
                                        Markdown の箇条書きを取り込む。「# 見出し」は中心ノードになる
                                        --replace はすべてのマップを作り直す
@@ -124,6 +126,13 @@ function main() {
       const count = removeNode(map, n);
       writeMap(map);
       console.log(`削除: ${n.text} (${n.id}) と子孫、合わせて ${count} 件`);
+      return;
+    }
+    case 'layout': {
+      const n = resolve(map, need(pos[1], '中心ノード'));
+      setLayout(map, n, need(pos[2], '配置（both / right / left）'));
+      writeMap(map);
+      console.log(`配置: ${n.text} (${n.id}) を${LAYOUTS[n.layout]}に`);
       return;
     }
     case 'collapse':

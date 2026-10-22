@@ -64,6 +64,9 @@
   button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--hud-border);
     background: var(--node-bg); color: var(--fg); cursor: pointer; }
   button:hover { border-color: var(--sel); }
+  #layout-group button.active { border-color: var(--sel); color: var(--sel); }
+  #layout-group button:disabled { opacity: .4; cursor: default; border-color: var(--hud-border); }
+  #layout-label { color: var(--muted); }
   #zoom { min-width: 44px; text-align: center; color: var(--muted); }
   .sep { width: 1px; height: 18px; background: var(--hud-border); margin: 0 4px; }
 </style>
@@ -85,6 +88,13 @@
   <span id="zoom">100%</span>
   <button id="btn-zoom-in">＋</button>
   <button id="btn-fit">全体を表示</button>
+  <span class="sep"></span>
+  <span id="layout-group" style="display: contents">
+    <span id="layout-label">配置</span>
+    <button data-layout="both">両側</button>
+    <button data-layout="right">右</button>
+    <button data-layout="left">左</button>
+  </span>
 </div>
 
 <div id="help" class="hud">
@@ -119,6 +129,7 @@
   const insertLine = document.getElementById('insert-line');
   const editor = document.getElementById('editor');
   const zoomLabel = document.getElementById('zoom');
+  const layoutButtons = [...document.querySelectorAll('#layout-group button')];
   const meas = document.createElement('canvas').getContext('2d');
   const vw = () => svg.getBoundingClientRect().width;
   const vh = () => svg.getBoundingClientRect().height;
@@ -146,6 +157,7 @@
   function serialize() {
     return { uid, nodes: [...nodes.values()].map(n => ({
       id: n.id, text: n.text, parentId: n.parentId, children: n.children.slice(), side: n.side,
+      layout: isRoot(n) ? layoutOf(n) : undefined,
       dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed })) };
   }
   // 古い形式を、いまの形式に直す。中心ノードが1つだった頃の rootId と rootPos を中心ノードの位置に移し、
@@ -168,7 +180,7 @@
     nodes = new Map();
     for (const d of data.nodes) {
       const n = makeNode(d.text, d.parentId);
-      Object.assign(n, { id: d.id, children: d.children.slice(), side: d.side, dx: d.dx, dy: d.dy, colorIndex: d.colorIndex, collapsed: !!d.collapsed });
+      Object.assign(n, { id: d.id, children: d.children.slice(), side: d.side, dx: d.dx, dy: d.dy, colorIndex: d.colorIndex, collapsed: !!d.collapsed, layout: d.layout });
       nodes.set(n.id, n);
     }
     uid = data.uid;
@@ -224,6 +236,27 @@
 
   function subtreeIds(n, acc = new Set()) { acc.add(n.id); for (const id of n.children) subtreeIds(nodes.get(id), acc); return acc; }
   function nextColor(root) { return root.children.length % PALETTE.length; }
+  // マップの配置。中心ノードの layout が both（両側）、right（右だけ）、left（左だけ）。
+  // 右だけ・左だけのときは、中心ノードの子の side をすべてその向きに揃えておく。
+  function layoutOf(root) { return root.layout || 'both'; }
+  function rootOf(n) { while (n.parentId) n = nodes.get(n.parentId); return n; }
+  // 中心ノードに子を足すときの向き。両側なら少ない側、片側ならその側。
+  function newSide(root) {
+    if (layoutOf(root) !== 'both') return layoutOf(root);
+    const kids = root.children.map(id => nodes.get(id));
+    const right = kids.filter(k => k.side === 'right').length;
+    return right <= kids.length - right ? 'right' : 'left';
+  }
+  function setLayout(rootId, mode) {
+    const r = nodes.get(rootId);
+    if (!r || layoutOf(r) === mode) return;
+    pushUndo();
+    r.layout = mode;
+    const kids = r.children.map(id => nodes.get(id));
+    if (mode !== 'both') for (const k of kids) k.side = mode;
+    else if (kids.every(k => k.side === kids[0].side)) kids.forEach((k, i) => { k.side = i % 2 ? 'left' : 'right'; });
+    commit();
+  }
   function colorOf(n) {
     if (isRoot(n)) return null;
     let cur = n;
@@ -239,12 +272,7 @@
     pushUndo();
     p.collapsed = false;
     const n = makeNode(text, parentId);
-    if (isRoot(p)) {
-      const kids = p.children.map(id => nodes.get(id));
-      const right = kids.filter(k => k.side === 'right').length;
-      n.side = right <= kids.length - right ? 'right' : 'left';
-      n.colorIndex = nextColor(p);
-    }
+    if (isRoot(p)) { n.side = newSide(p); n.colorIndex = nextColor(p); }
     nodes.set(n.id, n); p.children.push(n.id);
     selectedId = n.id; commit(); startEdit(n.id, null, true);
   }
@@ -297,9 +325,9 @@
     if (op) op.children.splice(op.children.indexOf(id), 1);
     if (isRoot(np)) {
       if (n.parentId !== np.id) n.colorIndex = nextColor(np);
-      n.side = drop.side;
+      n.side = layoutOf(np) === 'both' ? drop.side : layoutOf(np);
     }
-    n.parentId = np.id; n.dx = 0; n.dy = 0;
+    n.parentId = np.id; n.dx = 0; n.dy = 0; delete n.layout;
     const i = drop.beforeId ? np.children.indexOf(drop.beforeId)
       : drop.afterId ? np.children.indexOf(drop.afterId) + 1 : np.children.length;
     np.children.splice(i, 0, id);
@@ -419,6 +447,8 @@
     initVisuals();
     world.setAttribute('transform', `translate(${view.tx},${view.ty}) scale(${view.s})`);
     zoomLabel.textContent = Math.round(view.s * 100) + '%';
+    const sel = nodes.get(selectedId), mode = sel ? layoutOf(rootOf(sel)) : null;
+    for (const b of layoutButtons) { b.disabled = !sel; b.classList.toggle('active', b.dataset.layout === mode); }
     for (const n of nodes.values()) {
       const e = nodeEls.get(n.id);
       const color = colorOf(n);
@@ -705,6 +735,11 @@
   document.getElementById('btn-zoom-in').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1.2));
   document.getElementById('btn-zoom-out').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1 / 1.2));
   document.getElementById('btn-fit').addEventListener('click', fitView);
+  // 配置のボタンは、選択中のノードが属するマップに効く
+  for (const b of layoutButtons) b.addEventListener('click', () => {
+    const sel = nodes.get(selectedId);
+    if (sel) setLayout(rootOf(sel).id, b.dataset.layout);
+  });
   document.querySelectorAll('button').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
   window.addEventListener('resize', requestDraw);
 

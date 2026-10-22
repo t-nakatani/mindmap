@@ -19,14 +19,14 @@ node cli.mjs show
 ```
 
 ```
-- 新規事業の検討  (n1 中心)
+- 新規事業の検討  (n1 中心 配置:両側)
   - 市場  (n2)
     - 国内  (n3)
   - 予算  (n6 折りたたみ:2)
-- 採用  (n10 中心)
+- 採用  (n10 中心 配置:右)
 ```
 
-括弧の中が ID です。`中心` は中心ノード、`折りたたみ:N` は閉じていて子孫が N 件ある印です。
+括弧の中が ID です。`中心` は中心ノード、`配置` はそのマップの枝の出る向き（両側・右・左）、`折りたたみ:N` は閉じていて子孫が N 件ある印です。
 
 中心ノードは複数置けます。中心ノードごとに独立したマップになり、キャンバスに並びます。
 
@@ -46,6 +46,7 @@ node cli.mjs add "外注費" --under 予算 --after 広告費   # 兄弟の後�
 node cli.mjs rename 北米 "北米（優先）"
 node cli.mjs move 人件費 --under 市場/海外               # 子ごと移す
 node cli.mjs remove 広告費                               # 子ごと消す
+node cli.mjs layout 新規事業の検討 right                 # マップの配置を右だけにする（both / right / left）
 node cli.mjs collapse 市場                               # 枝を閉じる
 node cli.mjs expand 市場
 node cli.mjs export                                      # Markdown で書き出す（ID なし）
@@ -93,5 +94,5 @@ printf -- '- 法務\n- 技術\n' | node cli.mjs import - --under リスク   # �
 - `cli.mjs`: コマンドの入口。
 - `lib/map.mjs`: ファイル入出力、ノードの解決、追加・移動・削除、箇条書きの読み書き。サーバーと CLI が共有する。
 - `data/map.json`: 正本。`{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }] }`。
-  `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
+  `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置、`layout` は配置（`both`・`right`・`left`、省略時は `both`）。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
   中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。
