@@ -780,8 +780,11 @@
   svg.addEventListener('pointerup', endPointer);
   svg.addEventListener('pointercancel', e => endPointer(e, true));
   svg.addEventListener('dblclick', e => {
-    const g = e.target.closest && e.target.closest('.node');
-    if (g && !e.target.closest('.toggle')) { e.preventDefault(); startEdit(g.dataset.id); }
+    // pointerdown で svg にポインタを捕捉しているので、e.target は svg になる。座標から要素を引き直す
+    const hit = document.elementFromPoint(e.clientX, e.clientY) || e.target;
+    const g = hit.closest && hit.closest('.node');
+    if (g && hit.closest('.toggle')) return;
+    if (g) { e.preventDefault(); startEdit(g.dataset.id); }
     else if (!g) { e.preventDefault(); const w = toWorld(e.clientX, e.clientY); addRoot(w.x, w.y); }
   });
   svg.addEventListener('wheel', e => {
