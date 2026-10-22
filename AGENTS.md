@@ -26,7 +26,7 @@ node cli.mjs show
 - 採用  (n10 中心)
 ```
 
-括弧の中が ID です。`中心` は中心ノード、`固定` は人がドラッグで置いた位置、`折りたたみ:N` は閉じていて子孫が N 件ある印です。
+括弧の中が ID です。`中心` は中心ノード、`折りたたみ:N` は閉じていて子孫が N 件ある印です。
 
 中心ノードは複数置けます。中心ノードごとに独立したマップになり、キャンバスに並びます。
 
@@ -92,6 +92,6 @@ printf -- '- 法務\n- 技術\n' | node cli.mjs import - --under リスク   # �
 - `server.mjs`: ページの配信、`GET/PUT /api/map`、SSE。`data/map.json` の変化を見て配る。
 - `cli.mjs`: コマンドの入口。
 - `lib/map.mjs`: ファイル入出力、ノードの解決、追加・移動・削除、箇条書きの読み書き。サーバーと CLI が共有する。
-- `data/map.json`: 正本。`{ uid, nodes: [{ id, text, parentId, children, side, pinned, dx, dy, colorIndex, collapsed }] }`。
-  `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置。ほかのノードの `dx, dy` は固定したときの親からの相対位置。
-  中心ノードが1つだった頃の `rootId`・`rootPos` は、読み込むときに自動で直す。
+- `data/map.json`: 正本。`{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }] }`。
+  `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
+  中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。

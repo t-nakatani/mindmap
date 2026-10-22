@@ -35,14 +35,13 @@
   .node rect { fill: var(--node-bg); stroke: var(--node-border); stroke-width: 1.5; transition: stroke .12s; }
   .node.selected rect { stroke: var(--sel) !important; stroke-width: 2.5; }
   .node.drop-target rect { stroke: var(--sel) !important; stroke-width: 2.5; stroke-dasharray: 6 4; }
-  .node.dragging { opacity: .9; }
+  .node.dragging { opacity: .4; }
+  #insert-line { stroke: var(--sel); stroke-width: 4; stroke-linecap: round; display: none; }
   .node text { fill: var(--fg); font-size: 15px; pointer-events: none; user-select: none;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
   .node.root text { font-size: 18px; font-weight: 600; }
   .node.root rect { stroke-width: 2; }
   .node.editing text { visibility: hidden; }
-  .node .pin { display: none; }
-  .node.pinned .pin { display: block; }
   .node.hidden, .link.hidden { display: none; }
   .toggle { cursor: pointer; }
   .toggle circle { fill: var(--node-bg); stroke-width: 1.5; }
@@ -74,6 +73,7 @@
   <g id="world">
     <g id="links"></g>
     <g id="nodes"></g>
+    <line id="insert-line"></line>
   </g>
 </svg>
 <div id="editor" contenteditable="true" spellcheck="false"></div>
@@ -85,9 +85,6 @@
   <span id="zoom">100%</span>
   <button id="btn-zoom-in">＋</button>
   <button id="btn-fit">全体を表示</button>
-  <span class="sep"></span>
-  <button id="btn-auto-sel">選択を自動配置に戻す</button>
-  <button id="btn-auto-all">すべて自動配置に戻す</button>
 </div>
 
 <div id="help" class="hud">
@@ -100,7 +97,8 @@
   <span><kbd>Delete</kbd> ノードを削除</span>
   <span><kbd>⌘.</kbd> 枝を折りたたむ / 開く（端の丸でも）</span>
   <span><kbd>矢印</kbd> ノード間を移動</span>
-  <span>ドラッグで位置を固定、別のノードに重ねて付け替え（中心は <kbd>Shift</kbd> を押して）</span>
+  <span>ドラッグで並べ替え、別のノードに重ねて付け替え</span>
+  <span>中心ノードはドラッグで移動（<kbd>Shift</kbd> を押して重ねると付け替え）</span>
   <span>背景ドラッグ・スクロールで移動、ピンチ / <kbd>⌘</kbd>+スクロールで拡大縮小</span>
   <span><kbd>⌘Z</kbd> 取り消し　<kbd>⌘0</kbd> 全体を表示</span>
 </div>
@@ -118,6 +116,7 @@
   const world = document.getElementById('world');
   const linksG = document.getElementById('links');
   const nodesG = document.getElementById('nodes');
+  const insertLine = document.getElementById('insert-line');
   const editor = document.getElementById('editor');
   const zoomLabel = document.getElementById('zoom');
   const meas = document.createElement('canvas').getContext('2d');
@@ -132,14 +131,14 @@
   let editOriginal = '';
   let view = { tx: 0, ty: 0, s: 1 };
   let undoStack = [], redoStack = [];
-  let drag = null, pan = null, dropTargetId = null;
+  let drag = null, pan = null;
   let animating = false;
   let hCache = new Map();
   const nodeEls = new Map(), linkEls = new Map();
 
   // ---------- データ ----------
   function makeNode(text, parentId) {
-    return { id: 'n' + (uid++), text, parentId, children: [], side: 'right', pinned: false, dx: 0, dy: 0,
+    return { id: 'n' + (uid++), text, parentId, children: [], side: 'right', dx: 0, dy: 0,
       colorIndex: 0, collapsed: false, hidden: false, w: MIN_W, h: NODE_H, cx: 0, cy: 0, vx: null, vy: null, depth: 0 };
   }
   const isRoot = n => !n.parentId;
@@ -147,14 +146,19 @@
   function serialize() {
     return { uid, nodes: [...nodes.values()].map(n => ({
       id: n.id, text: n.text, parentId: n.parentId, children: n.children.slice(), side: n.side,
-      pinned: n.pinned, dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed })) };
+      dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed })) };
   }
-  // 中心ノードが1つだった頃の形式（rootId と rootPos）を、いまの形式に直す。
+  // 古い形式を、いまの形式に直す。中心ノードが1つだった頃の rootId と rootPos を中心ノードの位置に移し、
+  // 中心ノード以外を自由に置けた頃の固定（pinned と dx, dy）を外す。
   function normalize(data) {
     if (data && data.rootId) {
       const r = data.nodes.find(d => d.id === data.rootId);
       if (r && data.rootPos) { r.dx = data.rootPos.x; r.dy = data.rootPos.y; }
       delete data.rootId; delete data.rootPos;
+    }
+    if (data) for (const d of data.nodes) {
+      if (d.parentId) { d.dx = 0; d.dy = 0; }
+      delete d.pinned;
     }
     return data;
   }
@@ -164,7 +168,7 @@
     nodes = new Map();
     for (const d of data.nodes) {
       const n = makeNode(d.text, d.parentId);
-      Object.assign(n, { id: d.id, children: d.children.slice(), side: d.side, pinned: d.pinned, dx: d.dx, dy: d.dy, colorIndex: d.colorIndex, collapsed: !!d.collapsed });
+      Object.assign(n, { id: d.id, children: d.children.slice(), side: d.side, dx: d.dx, dy: d.dy, colorIndex: d.colorIndex, collapsed: !!d.collapsed });
       nodes.set(n.id, n);
     }
     uid = data.uid;
@@ -282,33 +286,25 @@
     selectedId = p.children[idx] || p.children[idx - 1] || p.id;
     commit();
   }
-  function reparent(id, newParentId) {
-    const n = nodes.get(id), np = nodes.get(newParentId);
-    if (!n || !np || subtreeIds(n).has(newParentId)) return;
-    pushUndo();
+  // ノードを別の親の下、または兄弟の間へ移す。drop は { parentId, side, beforeId, afterId }。
+  // beforeId か afterId があればその隣に、なければ末尾に入れる。side は中心ノードの子のときだけ使う。
+  function moveTo(id, drop, recordUndo = true) {
+    const n = nodes.get(id), np = nodes.get(drop.parentId);
+    if (!n || !np || subtreeIds(n).has(np.id)) return;
+    if (recordUndo) pushUndo();
+    const before = undoStack[undoStack.length - 1];
     const op = nodes.get(n.parentId);
     if (op) op.children.splice(op.children.indexOf(id), 1);
-    n.parentId = newParentId; np.children.push(id);
-    n.pinned = false; n.dx = 0; n.dy = 0;
-    if (isRoot(np)) { n.side = n.cx < np.cx ? 'left' : 'right'; n.colorIndex = nextColor(np); }
-    commit();
-  }
-  function unpin(id) {
-    const n = nodes.get(id); if (!n || !n.pinned) return;
-    pushUndo(); n.pinned = false; n.dx = 0; n.dy = 0;
-    resetSide(n);
-    commit();
-  }
-  // 中心ノードの子は、いまの位置が中心の左右どちらにあるかで向きを決め直す。
-  function resetSide(n) {
-    const p = nodes.get(n.parentId);
-    if (isRoot(p)) n.side = n.cx < p.cx ? 'left' : 'right';
-  }
-  function unpinAll() {
-    const pinned = [...nodes.values()].filter(n => n.pinned);
-    if (!pinned.length) return;
-    pushUndo();
-    for (const n of pinned) { n.pinned = false; n.dx = 0; n.dy = 0; resetSide(n); }
+    if (isRoot(np)) {
+      if (n.parentId !== np.id) n.colorIndex = nextColor(np);
+      n.side = drop.side;
+    }
+    n.parentId = np.id; n.dx = 0; n.dy = 0;
+    const i = drop.beforeId ? np.children.indexOf(drop.beforeId)
+      : drop.afterId ? np.children.indexOf(drop.afterId) + 1 : np.children.length;
+    np.children.splice(i, 0, id);
+    np.collapsed = false;
+    if (recordUndo && JSON.stringify(serialize()) === before) { undoStack.pop(); requestDraw(); return; }
     commit();
   }
 
@@ -333,7 +329,7 @@
   }
   function subH(n) {
     if (hCache.has(n.id)) return hCache.get(n.id);
-    const kids = n.collapsed ? [] : n.children.map(id => nodes.get(id)).filter(k => !k.pinned);
+    const kids = n.collapsed ? [] : n.children.map(id => nodes.get(id));
     let h = n.h;
     if (kids.length) {
       let s = 0; for (const k of kids) s += subH(k);
@@ -353,12 +349,6 @@
       placeChildren(k, dir);
     }
   }
-  function placePinned(parent, kids, dirDefault) {
-    for (const k of kids) {
-      k.cx = parent.cx + k.dx; k.cy = parent.cy + k.dy; k.depth = parent.depth + 1;
-      placeChildren(k, isRoot(parent) ? (k.dx < 0 ? -1 : 1) : dirDefault);
-    }
-  }
   function hideSubtree(n) {
     for (const id of n.children) {
       const k = nodes.get(id);
@@ -368,9 +358,7 @@
   }
   function placeChildren(n, dir) {
     if (n.collapsed) { hideSubtree(n); return; }
-    const kids = n.children.map(id => nodes.get(id));
-    placeStack(n, kids.filter(k => !k.pinned), dir);
-    placePinned(n, kids.filter(k => k.pinned), dir);
+    placeStack(n, n.children.map(id => nodes.get(id)), dir);
   }
   function layout() {
     for (const n of nodes.values()) { measure(n); n.hidden = false; }
@@ -378,9 +366,8 @@
     for (const root of roots()) {
       root.cx = root.dx; root.cy = root.dy; root.depth = 0;
       const kids = root.children.map(id => nodes.get(id));
-      placeStack(root, kids.filter(k => !k.pinned && k.side === 'right'), 1);
-      placeStack(root, kids.filter(k => !k.pinned && k.side === 'left'), -1);
-      placePinned(root, kids.filter(k => k.pinned), 1);
+      placeStack(root, kids.filter(k => k.side === 'right'), 1);
+      placeStack(root, kids.filter(k => k.side === 'left'), -1);
     }
   }
 
@@ -395,14 +382,13 @@
         const g = el('g', { class: 'node' }); g.dataset.id = n.id;
         const rect = el('rect', { rx: 10, ry: 10 });
         const text = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
-        const pin = el('circle', { class: 'pin', r: 3.5 });
         const toggle = el('g', { class: 'toggle' });
         const tCircle = el('circle', { r: 8 });
         const tDash = el('line', { class: 'dash', x1: -3.5, y1: 0, x2: 3.5, y2: 0 });
         const tText = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
         toggle.append(tCircle, tDash, tText);
-        g.append(rect, text, pin, toggle); nodesG.appendChild(g);
-        nodeEls.set(n.id, { g, rect, text, pin, toggle, tCircle, tDash, tText });
+        g.append(rect, text, toggle); nodesG.appendChild(g);
+        nodeEls.set(n.id, { g, rect, text, toggle, tCircle, tDash, tText });
       }
       if (n.parentId && !linkEls.has(n.id)) {
         const p = el('path', { class: 'link' }); linksG.appendChild(p); linkEls.set(n.id, p);
@@ -421,9 +407,10 @@
     let moving = false;
     initVisuals();
     for (const n of nodes.values()) {
-      const ddx = n.cx - n.vx, ddy = n.cy - n.vy;
+      const off = dragOffset(n);
+      const ddx = n.cx + off.x - n.vx, ddy = n.cy + off.y - n.vy;
       if (Math.abs(ddx) > 0.4 || Math.abs(ddy) > 0.4) { n.vx += ddx * 0.28; n.vy += ddy * 0.28; moving = true; }
-      else { n.vx = n.cx; n.vy = n.cy; }
+      else { n.vx = n.cx + off.x; n.vy = n.cy + off.y; }
     }
     draw();
     if (moving) requestAnimationFrame(frame); else animating = false;
@@ -437,14 +424,13 @@
       const color = colorOf(n);
       e.g.setAttribute('transform', `translate(${n.vx - n.w / 2},${n.vy - n.h / 2})`);
       e.g.setAttribute('class', 'node' + (isRoot(n) ? ' root' : '') + (n.id === selectedId ? ' selected' : '')
-        + (n.id === dropTargetId ? ' drop-target' : '') + (n.id === editingId ? ' editing' : '')
-        + (n.pinned ? ' pinned' : '') + (drag && drag.moved && drag.id === n.id ? ' dragging' : '')
+        + (drag && drag.drop && drag.drop.parentId === n.id && !drag.drop.line ? ' drop-target' : '')
+        + (n.id === editingId ? ' editing' : '') + (dragOffset(n).x || dragOffset(n).y ? ' dragging' : '')
         + (n.hidden ? ' hidden' : '') + (n.collapsed ? ' collapsed' : ''));
       e.rect.setAttribute('width', n.w); e.rect.setAttribute('height', n.h);
       if (color) e.rect.style.stroke = color; else e.rect.style.stroke = '';
       e.text.setAttribute('x', n.w / 2); e.text.setAttribute('y', n.h / 2);
       if (e.text.textContent !== n.text) e.text.textContent = n.text;
-      e.pin.setAttribute('cx', n.w); e.pin.setAttribute('cy', 0); e.pin.setAttribute('fill', color || 'var(--muted)');
       if (n.parentId && n.children.length) {
         const p = nodes.get(n.parentId);
         const d = p.cx <= n.cx ? 1 : -1;
@@ -466,6 +452,9 @@
         path.setAttribute('stroke-width', Math.max(1.5, 5 - n.depth * 1.2));
       }
     }
+    const line = drag && drag.drop && drag.drop.line;
+    insertLine.style.display = line ? 'block' : 'none';
+    if (line) for (const k of ['x1', 'x2', 'y1', 'y2']) insertLine.setAttribute(k, line[k]);
     if (editingId) {
       const n = nodes.get(editingId);
       const root = isRoot(n), fs = root ? 18 : 15, pad = root ? ROOT_PAD : PAD;
@@ -545,18 +534,43 @@
   }
 
   // ---------- ドラッグ・パン ----------
-  function findDropTarget(n) {
-    const sub = subtreeIds(n);
+  // 中心ノードは自由に置ける。ほかのノードは位置を持たない。離した場所で付け替えか並べ替えをし、配置は自動に任せる。
+  const NO_OFFSET = { x: 0, y: 0 };
+  function dragOffset(n) { return drag && drag.sub && drag.sub.has(n.id) ? drag.off : NO_OFFSET; }
+  // 点 (x, y) に重なったノードの子にする。
+  function childDropAt(x, y, exclude) {
     let best = null, bestD = Infinity;
-    const M = 24;
     for (const c of nodes.values()) {
-      if (sub.has(c.id) || c.hidden) continue;
-      const inside = n.cx >= c.cx - c.w / 2 - M && n.cx <= c.cx + c.w / 2 + M && n.cy >= c.cy - c.h / 2 - M && n.cy <= c.cy + c.h / 2 + M;
-      if (!inside) continue;
-      const d = Math.hypot(c.cx - n.cx, c.cy - n.cy);
-      if (d < bestD) { bestD = d; best = c.id; }
+      if (exclude.has(c.id) || c.hidden) continue;
+      if (Math.abs(x - c.cx) > c.w / 2 || Math.abs(y - c.cy) > c.h / 2) continue;
+      const d = Math.hypot(c.cx - x, c.cy - y);
+      if (d < bestD) { bestD = d; best = c; }
     }
-    return best;
+    if (!best) return null;
+    return { parentId: best.id, side: x < best.cx ? 'left' : 'right', beforeId: null, afterId: null };
+  }
+  // 点 (x, y) を兄弟の列の間に入れる。いちばん近い兄弟の列を選び、上下どこに入るかを決める。
+  function insertDropAt(x, y, exclude) {
+    let near = null, nearD = Infinity;
+    for (const s of nodes.values()) {
+      if (exclude.has(s.id) || s.hidden || isRoot(s)) continue;
+      if (Math.abs(x - s.cx) > s.w / 2 + HGAP / 2) continue;
+      const d = Math.abs(y - s.cy);
+      if (d < nearD) { nearD = d; near = s; }
+    }
+    if (!near || nearD > NODE_H * 1.5 + VGAP) return null;
+    const p = nodes.get(near.parentId);
+    const dir = Math.sign(near.cx - p.cx) || 1;
+    const sibs = p.children.map(id => nodes.get(id))
+      .filter(k => !exclude.has(k.id) && (Math.sign(k.cx - p.cx) || 1) === dir).sort((a, b) => a.cy - b.cy);
+    const i = sibs.findIndex(k => k.cy > y);
+    const before = i < 0 ? null : sibs[i], after = i < 0 ? sibs[sibs.length - 1] : sibs[i - 1] || null;
+    const ly = before && after ? (after.cy + after.h / 2 + before.cy - before.h / 2) / 2
+      : before ? before.cy - before.h / 2 - VGAP / 2 : after.cy + after.h / 2 + VGAP / 2;
+    const inner = p.cx + dir * (p.w / 2 + HGAP);
+    const outer = inner + dir * Math.max(...sibs.map(k => k.w), MIN_W);
+    return { parentId: p.id, side: dir < 0 ? 'left' : 'right', beforeId: before && before.id, afterId: after && after.id,
+      line: { x1: Math.min(inner, outer), x2: Math.max(inner, outer), y1: ly, y2: ly } };
   }
   svg.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
@@ -567,7 +581,8 @@
       const n = nodes.get(g.dataset.id);
       if (editingId && editingId !== n.id) finishEdit();
       if (editingId === n.id) return;
-      drag = { id: n.id, startX: e.clientX, startY: e.clientY, grabDX: n.cx - w.x, grabDY: n.cy - w.y, moved: false };
+      drag = { id: n.id, startX: e.clientX, startY: e.clientY, grabDX: n.cx - w.x, grabDY: n.cy - w.y, moved: false,
+        sub: null, off: NO_OFFSET, drop: null };
       selectedId = n.id; requestDraw();
     } else {
       finishEdit();
@@ -581,15 +596,23 @@
       const n = nodes.get(drag.id); if (!n) return;
       if (!drag.moved) {
         if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 4) return;
-        drag.moved = true; pushUndo();
+        drag.moved = true;
+        if (isRoot(n)) pushUndo(); else drag.sub = subtreeIds(n);
       }
       const w = toWorld(e.clientX, e.clientY);
       const tx = w.x + drag.grabDX, ty = w.y + drag.grabDY;
-      if (isRoot(n)) { n.dx = tx; n.dy = ty; }
-      else { const p = nodes.get(n.parentId); n.pinned = true; n.dx = tx - p.cx; n.dy = ty - p.cy; }
-      layout(); n.vx = n.cx; n.vy = n.cy;
-      // 中心ノードは Shift を押しながら重ねたときだけ、別のマップの枝になる
-      dropTargetId = isRoot(n) && !e.shiftKey ? null : findDropTarget(n);
+      const exclude = subtreeIds(n);
+      if (isRoot(n)) {
+        n.dx = tx; n.dy = ty;
+        layout(); n.vx = n.cx; n.vy = n.cy;
+        // 中心ノードは Shift を押しながら重ねたときだけ、別のマップの枝になる
+        drag.drop = e.shiftKey ? childDropAt(tx, ty, exclude) : null;
+      } else {
+        // 枝ごとポインタについて動かす。モデルの位置は変えない
+        drag.off = { x: tx - n.cx, y: ty - n.cy };
+        for (const id of drag.sub) { const k = nodes.get(id); k.vx = k.cx + drag.off.x; k.vy = k.cy + drag.off.y; }
+        drag.drop = childDropAt(tx, ty, exclude) || insertDropAt(tx, ty, exclude);
+      }
       requestDraw();
     } else if (pan) {
       if (!pan.moved && Math.hypot(e.clientX - pan.startX, e.clientY - pan.startY) < 3) return;
@@ -598,16 +621,16 @@
       requestDraw();
     }
   });
-  function endPointer(e) {
+  function endPointer(e, cancelled = false) {
     if (drag) {
       const n = nodes.get(drag.id);
-      if (drag.moved && n) {
-        if (dropTargetId) {
-          if (dropTargetId === n.parentId) { n.pinned = false; n.dx = 0; n.dy = 0; resetSide(n); commit(); }
-          else reparent(n.id, dropTargetId);
-        } else commit();
+      const d = drag;
+      drag = null;
+      if (d.moved && n) {
+        if (d.drop && !cancelled) moveTo(n.id, d.drop, !isRoot(n));
+        else if (isRoot(n)) commit();
       }
-      drag = null; dropTargetId = null; requestDraw();
+      requestDraw();
     }
     if (pan) {
       if (!pan.moved) { selectedId = null; requestDraw(); }
@@ -615,7 +638,7 @@
     }
   }
   svg.addEventListener('pointerup', endPointer);
-  svg.addEventListener('pointercancel', endPointer);
+  svg.addEventListener('pointercancel', e => endPointer(e, true));
   svg.addEventListener('dblclick', e => {
     const g = e.target.closest && e.target.closest('.node');
     if (g && !e.target.closest('.toggle')) { e.preventDefault(); startEdit(g.dataset.id); }
@@ -682,8 +705,6 @@
   document.getElementById('btn-zoom-in').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1.2));
   document.getElementById('btn-zoom-out').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1 / 1.2));
   document.getElementById('btn-fit').addEventListener('click', fitView);
-  document.getElementById('btn-auto-sel').addEventListener('click', () => selectedId && unpin(selectedId));
-  document.getElementById('btn-auto-all').addEventListener('click', unpinAll);
   document.querySelectorAll('button').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
   window.addEventListener('resize', requestDraw);
 
