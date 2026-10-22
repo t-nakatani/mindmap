@@ -47,6 +47,7 @@ node cli.mjs rename 北米 "北米（優先）"
 node cli.mjs move 人件費 --under 市場/海外               # 子ごと移す
 node cli.mjs remove 広告費                               # 子ごと消す
 node cli.mjs layout 新規事業の検討 right                 # マップの配置を右だけにする（both / right / left）
+node cli.mjs side 予算 left                              # 枝を中心の左へ出す（片側のマップは両側になる）
 node cli.mjs collapse 市場                               # 枝を閉じる
 node cli.mjs expand 市場
 node cli.mjs export                                      # Markdown で書き出す（ID なし）

@@ -64,9 +64,9 @@
   button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--hud-border);
     background: var(--node-bg); color: var(--fg); cursor: pointer; }
   button:hover { border-color: var(--sel); }
-  #layout-group button.active { border-color: var(--sel); color: var(--sel); }
-  #layout-group button:disabled { opacity: .4; cursor: default; border-color: var(--hud-border); }
-  #layout-label { color: var(--muted); }
+  #layout-group button.active, #side-group button.active { border-color: var(--sel); color: var(--sel); }
+  #layout-group button:disabled, #side-group button:disabled { opacity: .4; cursor: default; border-color: var(--hud-border); }
+  .group-label { color: var(--muted); }
   #zoom { min-width: 44px; text-align: center; color: var(--muted); }
   .sep { width: 1px; height: 18px; background: var(--hud-border); margin: 0 4px; }
 </style>
@@ -90,10 +90,16 @@
   <button id="btn-fit">全体を表示</button>
   <span class="sep"></span>
   <span id="layout-group" style="display: contents">
-    <span id="layout-label">配置</span>
+    <span class="group-label">配置</span>
     <button data-layout="both">両側</button>
     <button data-layout="right">右</button>
     <button data-layout="left">左</button>
+  </span>
+  <span class="sep"></span>
+  <span id="side-group" style="display: contents">
+    <span class="group-label">枝</span>
+    <button data-side="left">◀ 左へ</button>
+    <button data-side="right">右へ ▶</button>
   </span>
 </div>
 
@@ -107,7 +113,8 @@
   <span><kbd>Delete</kbd> ノードを削除</span>
   <span><kbd>⌘.</kbd> 枝を折りたたむ / 開く（端の丸でも）</span>
   <span><kbd>矢印</kbd> ノード間を移動</span>
-  <span>ドラッグで並べ替え、別のノードに重ねて付け替え</span>
+  <span><kbd>⌘←</kbd> <kbd>⌘→</kbd> 選択中の枝を中心の左 / 右へ</span>
+  <span>ドラッグで並べ替え・中心の左右へ移動、別のノードに重ねて付け替え</span>
   <span>中心ノードはドラッグで移動（<kbd>Shift</kbd> を押して重ねると付け替え）</span>
   <span>背景ドラッグ・スクロールで移動、ピンチ / <kbd>⌘</kbd>+スクロールで拡大縮小</span>
   <span><kbd>⌘Z</kbd> 取り消し　<kbd>⌘0</kbd> 全体を表示</span>
@@ -130,6 +137,7 @@
   const editor = document.getElementById('editor');
   const zoomLabel = document.getElementById('zoom');
   const layoutButtons = [...document.querySelectorAll('#layout-group button')];
+  const sideButtons = [...document.querySelectorAll('#side-group button')];
   const meas = document.createElement('canvas').getContext('2d');
   const vw = () => svg.getBoundingClientRect().width;
   const vh = () => svg.getBoundingClientRect().height;
@@ -257,6 +265,22 @@
     else if (kids.every(k => k.side === kids[0].side)) kids.forEach((k, i) => { k.side = i % 2 ? 'left' : 'right'; });
     commit();
   }
+  // 中心ノードの子のうち、n を含む枝。中心ノード自身なら null。
+  function branchOf(n) {
+    if (isRoot(n)) return null;
+    while (!isRoot(nodes.get(n.parentId))) n = nodes.get(n.parentId);
+    return n;
+  }
+  // 枝ごとに左右を決める。片側だけのマップで反対側へ出すと、そのマップは両側になる。
+  function setSide(id, side) {
+    const n = nodes.get(id), b = n && branchOf(n);
+    if (!b || b.side === side) return;
+    pushUndo();
+    const r = rootOf(b);
+    if (layoutOf(r) !== 'both') r.layout = 'both';
+    b.side = side;
+    commit();
+  }
   function colorOf(n) {
     if (isRoot(n)) return null;
     let cur = n;
@@ -325,7 +349,9 @@
     if (op) op.children.splice(op.children.indexOf(id), 1);
     if (isRoot(np)) {
       if (n.parentId !== np.id) n.colorIndex = nextColor(np);
-      n.side = layoutOf(np) === 'both' ? drop.side : layoutOf(np);
+      // 片側だけのマップで反対側へ置いたら、そのマップは両側になる
+      if (layoutOf(np) !== 'both' && drop.side !== layoutOf(np)) np.layout = 'both';
+      n.side = drop.side;
     }
     n.parentId = np.id; n.dx = 0; n.dy = 0; delete n.layout;
     const i = drop.beforeId ? np.children.indexOf(drop.beforeId)
@@ -449,6 +475,8 @@
     zoomLabel.textContent = Math.round(view.s * 100) + '%';
     const sel = nodes.get(selectedId), mode = sel ? layoutOf(rootOf(sel)) : null;
     for (const b of layoutButtons) { b.disabled = !sel; b.classList.toggle('active', b.dataset.layout === mode); }
+    const branch = sel && branchOf(sel);
+    for (const b of sideButtons) { b.disabled = !branch; b.classList.toggle('active', !!branch && b.dataset.side === branch.side); }
     for (const n of nodes.values()) {
       const e = nodeEls.get(n.id);
       const color = colorOf(n);
@@ -577,7 +605,23 @@
       if (d < bestD) { bestD = d; best = c; }
     }
     if (!best) return null;
-    return { parentId: best.id, side: x < best.cx ? 'left' : 'right', beforeId: null, afterId: null };
+    // 片側だけのマップの中心ノードに重ねたときは、その側に付ける
+    const fixed = isRoot(best) && layoutOf(best) !== 'both' ? layoutOf(best) : null;
+    return { parentId: best.id, side: fixed || (x < best.cx ? 'left' : 'right'), beforeId: null, afterId: null };
+  }
+  // 中心ノードの横の、まだ枝のない側に置く。左右の移動で、反対側が空のときに使う。
+  function sideDropAt(x, y, exclude) {
+    for (const r of roots()) {
+      if (exclude.has(r.id)) continue;
+      const dir = x < r.cx ? -1 : 1, gap = dir * (x - r.cx) - r.w / 2;
+      if (gap < 0 || gap > HGAP + 260 || Math.abs(y - r.cy) > 120) continue;
+      const side = dir < 0 ? 'left' : 'right';
+      if (r.children.some(id => !exclude.has(id) && nodes.get(id).side === side)) continue;
+      const inner = r.cx + dir * (r.w / 2 + HGAP), outer = inner + dir * MIN_W * 2;
+      return { parentId: r.id, side, beforeId: null, afterId: null,
+        line: { x1: Math.min(inner, outer), x2: Math.max(inner, outer), y1: r.cy, y2: r.cy } };
+    }
+    return null;
   }
   // 点 (x, y) を兄弟の列の間に入れる。いちばん近い兄弟の列を選び、上下どこに入るかを決める。
   function insertDropAt(x, y, exclude) {
@@ -641,7 +685,7 @@
         // 枝ごとポインタについて動かす。モデルの位置は変えない
         drag.off = { x: tx - n.cx, y: ty - n.cy };
         for (const id of drag.sub) { const k = nodes.get(id); k.vx = k.cx + drag.off.x; k.vy = k.cy + drag.off.y; }
-        drag.drop = childDropAt(tx, ty, exclude) || insertDropAt(tx, ty, exclude);
+        drag.drop = childDropAt(tx, ty, exclude) || insertDropAt(tx, ty, exclude) || sideDropAt(tx, ty, exclude);
       }
       requestDraw();
     } else if (pan) {
@@ -713,6 +757,9 @@
     if (meta && e.key === '-') { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1 / 1.2); return; }
     if (meta && e.key === '0') { e.preventDefault(); fitView(); return; }
     if (meta && e.key === '.') { e.preventDefault(); if (selectedId) toggleCollapse(selectedId); return; }
+    if (meta && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault(); if (selectedId) setSide(selectedId, e.key === 'ArrowLeft' ? 'left' : 'right'); return;
+    }
     if (meta) return;
     if (!selectedId) { if (e.key === 'Tab') { e.preventDefault(); selectedId = roots()[0].id; requestDraw(); } return; }
     switch (e.key) {
@@ -740,6 +787,8 @@
     const sel = nodes.get(selectedId);
     if (sel) setLayout(rootOf(sel).id, b.dataset.layout);
   });
+  // 枝のボタンは、選択中のノードを含む枝（中心ノードの子）を左右へ動かす
+  for (const b of sideButtons) b.addEventListener('click', () => selectedId && setSide(selectedId, b.dataset.side));
   document.querySelectorAll('button').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
   window.addEventListener('resize', requestDraw);
 
