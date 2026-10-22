@@ -46,11 +46,13 @@ const server = http.createServer((req, res) => {
     return json(res, 200, map);
   }
   if (url.pathname === '/api/map' && req.method === 'PUT') {
-    let body = '';
-    req.on('data', c => { body += c; if (body.length > 5e6) req.destroy(); });
+    // 塊のまま集めてから文字列にする。塊ごとに文字列へつなぐと、日本語の文字が塊の境目で壊れる
+    const chunks = [];
+    let size = 0;
+    req.on('data', c => { chunks.push(c); size += c.length; if (size > 5e6) req.destroy(); });
     req.on('end', () => {
       try {
-        const map = normalize(JSON.parse(body));
+        const map = normalize(JSON.parse(Buffer.concat(chunks).toString('utf8')));
         if (!map || !Array.isArray(map.nodes) || !map.nodes.some(n => !n.parentId)) return json(res, 400, { error: '中心ノードを含む nodes が必要です' });
         writeMap(map);
         lastSent = fs.readFileSync(DATA_FILE, 'utf8');
