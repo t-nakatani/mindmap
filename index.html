@@ -59,8 +59,13 @@
     background: var(--hud-bg); border: 1px solid var(--hud-border); backdrop-filter: blur(8px); font-size: 13px; }
   #toolbar { left: 12px; bottom: 12px; flex-wrap: wrap; max-width: calc(100% - 24px); }
   #toolbar button { white-space: nowrap; }
-  #help { right: 12px; top: 12px; flex-direction: column; align-items: flex-start; gap: 3px; color: var(--muted); font-size: 12px; }
-  #help b { color: var(--fg); font-weight: 600; margin-bottom: 2px; }
+  #help { right: 12px; top: 12px; display: block; width: max-content; max-width: min(460px, calc(100% - 24px)); color: var(--muted); font-size: 12px; }
+  #help span { display: block; margin-top: 3px; }
+  #help summary { cursor: pointer; list-style: none; color: var(--fg); font-weight: 600; user-select: none; outline: none; }
+  #help summary::-webkit-details-marker { display: none; }
+  #help summary::before { content: '▸'; display: inline-block; width: 1em; color: var(--muted); }
+  #help[open] summary::before { content: '▾'; }
+  #help[open] summary { margin-bottom: 2px; }
   #help kbd { font-family: inherit; background: rgba(127,127,127,.15); border-radius: 4px; padding: 0 5px; color: var(--fg); }
   button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--hud-border);
     background: var(--node-bg); color: var(--fg); cursor: pointer; }
@@ -109,8 +114,8 @@
   </span>
 </div>
 
-<div id="help" class="hud">
-  <b>操作</b>
+<details id="help" class="hud">
+  <summary title="クリックで開閉">操作</summary>
   <span><kbd>Tab</kbd> 子ノードを追加</span>
   <span><kbd>Enter</kbd> 兄弟ノードを追加（中心では子）</span>
   <span>背景を<kbd>ダブルクリック</kbd> 新しい中心ノード</span>
@@ -124,7 +129,7 @@
   <span>中心ノードはドラッグで移動（<kbd>Shift</kbd> を押して重ねると付け替え）</span>
   <span>背景ドラッグ・スクロールで移動、ピンチ / <kbd>⌘</kbd>+スクロールで拡大縮小</span>
   <span><kbd>⌘Z</kbd> 取り消し　<kbd>⌘0</kbd> 全体を表示</span>
-</div>
+</details>
 
 <script>
 (() => {
@@ -806,7 +811,7 @@
     requestDraw();
   }
   window.addEventListener('keydown', e => {
-    if (e.target === mapSelect) return;
+    if (e.target === mapSelect || (e.target.closest && e.target.closest('#help'))) return;
     const meta = e.metaKey || e.ctrlKey;
     if (editingId) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishEdit(); }
@@ -853,6 +858,13 @@
   for (const b of sideButtons) b.addEventListener('click', () => selectedId && setSide(selectedId, b.dataset.side));
   document.querySelectorAll('button').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
   window.addEventListener('resize', requestDraw);
+  // 操作の一覧は開閉できる。閉じた状態を既定にし、開いたかどうかを覚える。
+  const help = document.getElementById('help');
+  try { help.open = localStorage.getItem('mindmap-help-open') === '1'; } catch (e) { /* 無視 */ }
+  help.addEventListener('toggle', () => {
+    try { localStorage.setItem('mindmap-help-open', help.open ? '1' : '0'); } catch (e) { /* 無視 */ }
+    help.querySelector('summary').blur();
+  });
 
   // ---------- 起動 ----------
   loadInitial().then(data => {
