@@ -819,6 +819,8 @@
     if (e.target === mapSelect || (e.target.closest && e.target.closest('#help'))) return;
     const meta = e.metaKey || e.ctrlKey;
     if (editingId) {
+      // 日本語入力の変換中や確定の Enter・Esc・Tab は IME に任せる。Safari は確定の Enter で isComposing が false になるので keyCode も見る
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishEdit(); }
       else if (e.key === 'Tab') { e.preventDefault(); const id = editingId; finishEdit(); addChild(id); }
       else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
