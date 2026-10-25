@@ -1,6 +1,6 @@
 # 手元の開発サーバー（npm run dev）で Google ログインを試すときだけ、.dev.vars にコピーして値を入れる。
 # GOOGLE_CLIENT_ID が無ければ、手元では認証なしで動く。
-# デプロイ先には同じ名前で wrangler secret put する。
+# デプロイ先には同じ名前で Worker の secret に入れる（README の「デプロイ」）。
 GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=
 ALLOWED_EMAILS=you@example.com

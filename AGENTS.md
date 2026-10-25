@@ -119,7 +119,9 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 - `lib/map.ts`: ノードの解決、追加・移動・削除、箇条書きの読み書き。Durable Object と CLI が共有する。
 - `lib/ops.ts`: CLI の操作（add・move など）を、名前の解決ごとマップに当てる。Durable Object が呼ぶ。
 - `cli.ts`: コマンドの入口。`node cli.ts` でそのまま動く（Node 23.6 以上）。
+- `cloudflare.config.ts`: Worker・binding・Durable Object・secret の宣言と、デプロイ先のアカウント。`wrangler.config.ts`: 静的アセットの置き場と手元の開発サーバーのポート。
 - 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }] }`。版番号はマップごとに書き込むたびに1つ上がる。
   `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置、`layout` は配置（`both`・`right`・`left`、省略時は `both`）。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
   中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。
 - 型の確認は `npm run typecheck`。
+- Cloudflare の操作（開発サーバー・デプロイ・secret・型の生成）は wrangler ではなく `cf` で行う（Node 26.12 以上が要るので `npm run dev` などの scripts か `mise exec -- npx cf <コマンド>`）。このフォルダには個人アカウントの profile `personal` を結び付けてある。

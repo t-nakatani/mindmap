@@ -5,9 +5,10 @@
   "type": "module",
   "description": "MindNode 風のマインドマップ。ブラウザのページと、エージェント向けの CLI。裏側は Cloudflare Workers と Durable Object。",
   "scripts": {
-    "dev": "wrangler dev --ip 127.0.0.1 --port 4381",
-    "deploy": "wrangler deploy",
-    "types": "wrangler types --strict-vars=false",
+    "dev": "mise exec -- cf dev",
+    "build": "mise exec -- cf build",
+    "deploy": "mise exec -- cf deploy",
+    "types": "mise exec -- cf workers types",
     "typecheck": "npm run types && tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
     "cli": "node cli.ts"
   },
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "cf": "^1.0.0-beta.21",
     "typescript": "^7.0.2",
     "wrangler": "^4.152.0"
   }

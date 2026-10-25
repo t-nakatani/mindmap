@@ -5,7 +5,8 @@ MindNode の「ノードの生え方」を Web で再現したマインドマッ
 
 ## 動かし方（手元）
 
-Node 23.6 以上（CLI の TypeScript をそのまま動かすため）。
+CLI は Node 23.6 以上（TypeScript をそのまま動かすため）。開発サーバーとデプロイは Cloudflare の CLI `cf` を使い、`cf` は Node 26.12 以上が要る。
+このプロジェクトは `mise.toml` で Node 26.12.1 に固めてあり、`npm run dev` などの scripts は `mise exec` 経由で `cf` を呼ぶ。
 
 ```sh
 npm install
@@ -37,21 +38,33 @@ node cli.ts migrate --replace    # 同じ名前のマップを上書きする
 
 ## デプロイ（Cloudflare）
 
-本人の個人アカウントに置く。会社のアカウントは使わない。`npx wrangler whoami` で確かめてから進める。
+本人の個人アカウントに置く。会社のアカウントは使わない。`cloudflare.config.ts` の `accountId` で個人アカウントに固めてある。
+`cf` のログインは profile で分けている。このフォルダには個人アカウントの profile `personal` を結び付けてある。
 
 ```sh
-npm run deploy      # https://mindmap.tomoya-12.workers.dev
+mise exec -- npx cf auth whoami     # tomoya.12@icloud.com と出ることを確かめる
+mise exec -- npx cf auth create personal && mise exec -- npx cf auth activate personal   # ログインが切れたとき
+```
+
+本番の Durable Object に全マップがある。設定を変えてデプロイするときは、先にマップを控え（`/api/maps` と各 `/api/map` を JSON で保存する）、dry-run を通してから上げる。
+
+```sh
+mise exec -- npx cf deploy --dry-run   # 何も上げずに、ビルドと binding を確かめる
+npm run deploy                         # https://mindmap.tomoya-12.workers.dev
 ```
 
 ログインは Knowledge Box と同じ形にした。ブラウザは Google でログインし（OpenID Connect、PKCE・state・nonce つき）、
 確認済みのメールアドレスが `ALLOWED_EMAILS` にあればセッションの cookie を出す。CLI とエージェントは `API_TOKEN` を
 `Authorization: Bearer` に付ける。設定はすべて Worker の secret で入れる。
 
+- `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`: Google Cloud の OAuth クライアント（ウェブ アプリケーション）
+- `ALLOWED_EMAILS`: ログインを通すアドレス。カンマ区切り
+- `API_TOKEN`: CLI 用。長い乱数にする
+
+secret を入れ直すときは、値を `.env` 形式で書いたファイルをリポジトリの外に置き、デプロイと一緒に上げる。終わったらファイルは消す。
+
 ```sh
-npx wrangler secret put GOOGLE_CLIENT_ID       # Google Cloud の OAuth クライアント（ウェブ アプリケーション）
-npx wrangler secret put GOOGLE_CLIENT_SECRET
-npx wrangler secret put ALLOWED_EMAILS         # ログインを通すアドレス。カンマ区切り
-npx wrangler secret put API_TOKEN              # CLI 用。長い乱数にする
+mise exec -- npx cf deploy --secrets-file ~/mindmap-secrets.env
 ```
 
 OAuth クライアントの「承認済みのリダイレクト URI」には次の2つを入れる。
