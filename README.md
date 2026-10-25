@@ -25,10 +25,11 @@ node cli.ts import outline.md --replace
 ## ファイル時代のマップを移す
 
 以前の Node サーバーは `data/<マップ名>.json` と `data/.current` にマップを置いていた。これをサーバーへ移す。
+`data/` はリポジトリの中にあり、git の対象外。2026-10-25 にデプロイ先へ移し終え、今は控えとして残している。
 
 ```sh
-node cli.ts migrate ~/dev/apps/mindmap-prototype/data            # 同じ名前のマップがあれば飛ばす
-node cli.ts migrate ~/dev/apps/mindmap-prototype/data --replace  # 同じ名前のマップを上書きする
+node cli.ts migrate              # data/ を移す。同じ名前のマップがあれば飛ばす
+node cli.ts migrate --replace    # 同じ名前のマップを上書きする
 ```
 
 画面を先に開くと、空のサーバーに `map` が自動で作られ、移すときに飛ばされる。その場合は `--replace` を付ける。
