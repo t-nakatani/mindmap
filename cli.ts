@@ -3,12 +3,25 @@
 // （Durable Object）で行う。ページには WebSocket で即時に反映される。
 // node cli.ts でそのまま動く（Node 23.6 以上の型の取り除き）。
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { normalize, resolve, outline, cleanName, isMap } from './lib/map.ts';
 import type { MindMap, MapNode } from './lib/map.ts';
 import type { OpArgs } from './lib/ops.ts';
 
-const BASE_URL = (process.env.MINDMAP_URL || 'http://127.0.0.1:4381').replace(/\/+$/, '');
+// つなぎ先とトークン。環境変数があればそれを、無ければ ~/.config/mindmap/env（KEY=値 の行）を使う。
+const CONFIG_FILE = path.join(os.homedir(), '.config', 'mindmap', 'env');
+function setting(key: string): string {
+  if (process.env[key]) return process.env[key]!;
+  let text = '';
+  try { text = fs.readFileSync(CONFIG_FILE, 'utf8'); } catch { return ''; }
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (m && m[1] === key) return m[2].replace(/^(['"])(.*)\1$/, '$2');
+  }
+  return '';
+}
+const BASE_URL = (setting('MINDMAP_URL') || 'http://127.0.0.1:4381').replace(/\/+$/, '');
 
 const USAGE = `使い方: node cli.ts <コマンド> [引数] [オプション]
 
@@ -42,10 +55,9 @@ const USAGE = `使い方: node cli.ts <コマンド> [引数] [オプション]
 ノードの指定: ID（n12）、完全一致の名前、または「中心/予算/人件費」のような経路（中心は省ける）。
 名前が複数あるときは ID か経路で指定する。
 
-環境変数:
+環境変数（~/.config/mindmap/env に KEY=値 で書いてもよい。環境変数が優先）:
   MINDMAP_URL                  サーバー（既定は手元の開発サーバー http://127.0.0.1:4381）
-  MINDMAP_ACCESS_CLIENT_ID     Cloudflare Access のサービストークン（デプロイ先を使うとき）
-  MINDMAP_ACCESS_CLIENT_SECRET 同じく
+  MINDMAP_TOKEN                API トークン（デプロイ先を使うとき。Worker の secret API_TOKEN と同じ値）
   MINDMAP_MAP                  既定のマップ名（省くと use で選んだもの）`;
 
 type Opts = { under?: string; after?: string; map?: string; replace?: boolean; root?: boolean; help?: boolean };
@@ -69,8 +81,8 @@ function need(v: string | undefined, what: string): string { if (v === undefined
 async function api<T = any>(method: string, apiPath: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const id = process.env.MINDMAP_ACCESS_CLIENT_ID, secret = process.env.MINDMAP_ACCESS_CLIENT_SECRET;
-  if (id && secret) { headers['CF-Access-Client-Id'] = id; headers['CF-Access-Client-Secret'] = secret; }
+  const token = setting('MINDMAP_TOKEN');
+  if (token) headers.Authorization = `Bearer ${token}`;
   let r: Response;
   try {
     r = await fetch(BASE_URL + apiPath, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
@@ -80,11 +92,9 @@ async function api<T = any>(method: string, apiPath: string, body?: unknown): Pr
   const text = await r.text();
   let data: any;
   try { data = JSON.parse(text); } catch {
-    if (r.status >= 300 && r.status < 400 || /<html/i.test(text)) {
-      throw new Error(`Cloudflare Access に止められました（${r.status}）。MINDMAP_ACCESS_CLIENT_ID と MINDMAP_ACCESS_CLIENT_SECRET を確かめてください`);
-    }
     throw new Error(`サーバーの応答が読めません（${r.status}）: ${text.slice(0, 200)}`);
   }
+  if (r.status === 401 && !token) throw new Error(`${data.error}（${CONFIG_FILE}）`);
   if (!r.ok) throw new Error(data.error || `サーバーがエラーを返しました（${r.status}）`);
   return data as T;
 }

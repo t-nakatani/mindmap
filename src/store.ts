@@ -7,11 +7,13 @@
 // - POST /api/op[?name=]      名前・ID・経路で指した操作を当てる {op, args}
 // - POST /api/import          ファイル時代のマップをまとめて入れる {maps: {名前: マップ}, current?, replace?}
 // - GET  /api/ws              変更を WebSocket で流す（map / current / maps）
+// - /api/auth/...              Google ログイン（src/auth.ts）。ほかはすべてログインか API トークンが要る
 // 書き込みは同期の SQL だけで行い、途中で await しない。だから読んでから書くまでに別の書き込みが割り込まない。
 import { DurableObject } from 'cloudflare:workers';
 import { cleanName, normalize, newMap, isMap, roots } from '../lib/map.ts';
 import type { MindMap } from '../lib/map.ts';
 import { applyOp, OPS } from '../lib/ops.ts';
+import { Auth, sameOrigin } from './auth.ts';
 import type { OpArgs } from '../lib/ops.ts';
 
 export interface MapInfo { name: string; title: string; roots: number; version: number; updatedAt: string }
@@ -32,6 +34,7 @@ function json(status: number, body: unknown): Response {
 
 export class MindmapStore extends DurableObject<Env> {
   sql: SqlStorage;
+  auth: Auth;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -40,6 +43,7 @@ export class MindmapStore extends DurableObject<Env> {
       name TEXT PRIMARY KEY, data TEXT NOT NULL, version INTEGER NOT NULL,
       title TEXT NOT NULL, roots INTEGER NOT NULL, updated_at TEXT NOT NULL)`);
     this.sql.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    this.auth = new Auth(this.sql, env);
     // ブラウザが接続を保つために送る ping には、DO を起こさずに pong を返す
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
@@ -123,6 +127,13 @@ export class MindmapStore extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     try {
+      if (url.pathname.startsWith('/api/auth/')) {
+        const res = await this.auth.route(request);
+        if (res) return res;
+      }
+      const who = await this.auth.who(request);
+      if (!who) return json(401, { error: 'ログインしていません。ブラウザは Google でログインし、CLI は MINDMAP_TOKEN を設定してください' });
+      if (who.via === 'session' && !sameOrigin(request)) return json(403, { error: '別のサイトからの書き込みは受けません' });
       if (url.pathname === '/api/ws') {
         if (request.headers.get('Upgrade') !== 'websocket') return json(426, { error: 'WebSocket で接続してください' });
         const pair = new WebSocketPair();

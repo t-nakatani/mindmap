@@ -79,6 +79,17 @@
   select { font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--hud-border);
     background: var(--node-bg); color: var(--fg); max-width: 200px; }
   .sep { width: 1px; height: 18px; background: var(--hud-border); margin: 0 4px; }
+  #login { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: var(--bg); z-index: 10; }
+  #login.show { display: flex; }
+  #login .box { display: flex; flex-direction: column; gap: 14px; align-items: center; padding: 28px 32px; border-radius: 14px;
+    background: var(--hud-bg); border: 1px solid var(--hud-border); max-width: calc(100% - 32px); text-align: center; }
+  #login h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  #login a { font-size: 14px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--hud-border); background: var(--node-bg);
+    color: var(--fg); text-decoration: none; }
+  #login a:hover { border-color: var(--sel); }
+  #login-error { color: #e4572e; font-size: 13px; min-height: 1em; }
+  #account { display: none; }
+  #account a { color: var(--muted); cursor: pointer; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -116,6 +127,14 @@
   </span>
 </div>
 
+<div id="login">
+  <div class="box">
+    <h1>Mind Map</h1>
+    <a href="/api/auth/google/start">Google でログイン</a>
+    <div id="login-error"></div>
+  </div>
+</div>
+
 <details id="help" class="hud">
   <summary title="クリックで開閉">操作</summary>
   <span><kbd>Tab</kbd> 子ノードを追加</span>
@@ -131,6 +150,7 @@
   <span>中心ノードはドラッグで移動（<kbd>Shift</kbd> を押して重ねると付け替え）</span>
   <span>背景ドラッグ・スクロールで移動、ピンチ / <kbd>⌘</kbd>+スクロールで拡大縮小</span>
   <span><kbd>⌘Z</kbd> 取り消し　<kbd>⌘0</kbd> 全体を表示</span>
+  <span id="account"><span id="account-email"></span> でログイン中 · <a id="btn-logout">ログアウト</a></span>
 </details>
 
 <script>
@@ -230,6 +250,7 @@
       const r = await fetch('/api/map' + mapQuery(), { method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: `{"baseVersion":${version},"map":${text}}` });
       const body = await r.json();
+      if (r.status === 401) { showLogin(); return; }
       if (name !== mapName) return; // 送っている間に別のマップへ切り替えた
       if (r.ok) {
         if (!mapName && body.name) setMapName(body.name);
@@ -287,7 +308,11 @@
     } catch (e) { alert('サーバーに届きませんでした'); }
   });
   async function loadInitial() {
-    try { const r = await fetch('/api/map'); if (r.ok) return await r.json(); } catch (e) { /* サーバーなし */ }
+    try {
+      const r = await fetch('/api/map');
+      if (r.status === 401) return { login: true };
+      if (r.ok) return await r.json();
+    } catch (e) { /* サーバーなし */ }
     try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch (e) { /* 壊れた保存は無視 */ }
     return null;
   }
@@ -310,7 +335,12 @@
         else if (msg.type === 'current') { if (msg.name && msg.name !== mapName) switchTo(msg.name); }
         else if (msg.type === 'maps') renderMaps(msg);
       };
-      ws.onclose = () => { clearInterval(pingTimer); setTimeout(open, Math.min(30000, 1000 * 2 ** retry++)); };
+      ws.onclose = async () => {
+        clearInterval(pingTimer);
+        // セッションが切れていたら、つなぎ直さずにログイン画面を出す
+        try { const r = await fetch('/api/auth/me'); if (r.ok && !(await r.json()).authenticated) { showLogin(); return; } } catch (e) { /* サーバーなし */ }
+        setTimeout(open, Math.min(30000, 1000 * 2 ** retry++));
+      };
     };
     open();
   }
@@ -332,6 +362,26 @@
       if (data.version > version) applyExternal(data, data.version);
     } catch (e) { /* サーバーなし */ }
   }
+  // ログイン。サーバーが 401 を返したら、Google でのログインを求める画面を出す。
+  const AUTH_ERRORS = { not_allowed: 'このアカウントは許可されていません', google_cancelled: 'ログインを取りやめました',
+    google_state_expired: '時間が経ちすぎました。もう一度ログインしてください', google_not_configured: 'Google ログインの設定がありません' };
+  function showLogin() {
+    const code = new URLSearchParams(location.search).get('auth');
+    document.getElementById('login-error').textContent = code ? (AUTH_ERRORS[code] || `ログインできませんでした（${code}）`) : '';
+    document.getElementById('login').classList.add('show');
+  }
+  async function showAccount() {
+    try {
+      const me = await (await fetch('/api/auth/me')).json();
+      if (!me.email || !me.email.includes('@')) return;
+      document.getElementById('account-email').textContent = me.email;
+      document.getElementById('account').style.display = 'block';
+    } catch (e) { /* サーバーなし */ }
+  }
+  document.getElementById('btn-logout').addEventListener('click', async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (e) { /* サーバーなし */ }
+    location.replace('/');
+  });
   // 外からの版で置き換える。まだ送っていない手元の変更は捨てる（⌘Z で戻せる）。
   function applyExternal(data, newVersion) {
     if (editingId) { editor.style.display = 'none'; editingId = null; }
@@ -919,6 +969,9 @@
 
   // ---------- 起動 ----------
   loadInitial().then(data => {
+    if (data && data.login) { showLogin(); return; }
+    if (new URLSearchParams(location.search).has('auth')) history.replaceState(null, '', '/');
+    showAccount();
     if (data) { if (data.name) setMapName(data.name); restore(data); lastSaved = JSON.stringify(serialize()); version = data.version || 0; selectedId = roots()[0].id; view = { tx: vw() / 2, ty: vh() / 2, s: 1 }; commit(); fitView(); }
     else newMap();
     refreshMaps();

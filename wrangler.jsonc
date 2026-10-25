@@ -14,11 +14,6 @@
     "bindings": [{ "name": "STORE", "class_name": "MindmapStore" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MindmapStore"] }],
-  // Cloudflare Access の検証に使う。デプロイ前に本人のチームと Access アプリの AUD を入れる。
-  // 空のままだと、手元（localhost）以外からの /api/ はすべて断る。
-  "vars": {
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": ""
-  },
+  // Google のクライアント・通すメールアドレス・API トークンは secret で入れる（src/env.d.ts、.dev.vars.example）。
   "observability": { "enabled": true }
 }

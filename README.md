@@ -32,21 +32,34 @@ node cli.ts migrate ~/dev/apps/mindmap-prototype/data --replace  # 同じ名前�
 ```
 
 画面を先に開くと、空のサーバーに `map` が自動で作られ、移すときに飛ばされる。その場合は `--replace` を付ける。
-デプロイ先へ移すときは、`MINDMAP_URL` とサービストークン（下記）を設定してから同じコマンドを使う。
+デプロイ先へ移すときは、`MINDMAP_URL` と `MINDMAP_TOKEN`（下記）を設定してから同じコマンドを使う。
 
 ## デプロイ（Cloudflare）
 
 本人の個人アカウントに置く。会社のアカウントは使わない。`npx wrangler whoami` で確かめてから進める。
 
-1. `npm run deploy` で Worker と Durable Object を作る。
-2. Zero Trust で Access のアプリケーションを作り、Worker のホストを守る。
-   - ブラウザ用のポリシー: 本人のメールアドレスだけを許可する。
-   - CLI とエージェント用: サービストークンを作り、そのトークンを「Service Auth」で許可するポリシーを足す。
-3. `wrangler.jsonc` の `ACCESS_TEAM_DOMAIN`（`<チーム>.cloudflareaccess.com`）と `ACCESS_AUD`（アプリケーションの AUD）を入れて、もう一度デプロイする。
-   この2つが空のあいだ、Worker は手元（localhost）以外からの `/api/` をすべて断る。
-4. CLI に `MINDMAP_URL`、`MINDMAP_ACCESS_CLIENT_ID`、`MINDMAP_ACCESS_CLIENT_SECRET` を設定する。
+```sh
+npm run deploy      # https://mindmap.tomoya-12.workers.dev
+```
 
-Worker は Access が付ける JWT（`Cf-Access-Jwt-Assertion`）の署名・AUD・発行元・期限を確かめる。ページ自体はデータを含まないので守らなくても漏れないが、Access はホスト全体に掛ける。
+ログインは Knowledge Box と同じ形にした。ブラウザは Google でログインし（OpenID Connect、PKCE・state・nonce つき）、
+確認済みのメールアドレスが `ALLOWED_EMAILS` にあればセッションの cookie を出す。CLI とエージェントは `API_TOKEN` を
+`Authorization: Bearer` に付ける。設定はすべて Worker の secret で入れる。
+
+```sh
+npx wrangler secret put GOOGLE_CLIENT_ID       # Google Cloud の OAuth クライアント（ウェブ アプリケーション）
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put ALLOWED_EMAILS         # ログインを通すアドレス。カンマ区切り
+npx wrangler secret put API_TOKEN              # CLI 用。長い乱数にする
+```
+
+OAuth クライアントの「承認済みのリダイレクト URI」には次の2つを入れる。
+
+- `https://mindmap.tomoya-12.workers.dev/api/auth/google/callback`
+- `http://127.0.0.1:4381/api/auth/google/callback`（手元で Google ログインを試すとき）
+
+CLI は `~/.config/mindmap/env` に `MINDMAP_URL` と `MINDMAP_TOKEN`（`API_TOKEN` と同じ値）を書いておけば、そのつなぎ先を使う。
+手元で Google ログインを試すときは `.dev.vars.example` を `.dev.vars` にコピーして値を入れる。`GOOGLE_CLIENT_ID` が無ければ、手元は認証なしで動く。
 
 ## できること
 
@@ -69,7 +82,8 @@ Worker は Access が付ける JWT（`Cf-Access-Jwt-Assertion`）の署名・AUD
 ## 中身
 
 - `public/index.html`: データは `nodes`（Map）。親のないノードが中心ノードで、`dx, dy` が位置。`layout()` が目標位置を決め、`frame()` が表示位置を補間し、`draw()` が SVG を更新する。操作の前に `pushUndo()` で状態を JSON で積む。
-- `src/worker.ts`: 入口。`/api/` の認証（Cloudflare Access の JWT）と、Durable Object への受け渡し。
+- `src/worker.ts`: 入口。`/api/` を Durable Object へ渡す。
+- `src/auth.ts`: Google ログインとセッション、API トークンの確認。Durable Object の中で動く。
 - `src/store.ts`: Durable Object。全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）。書き込みは同期の SQL だけで行うので、順に処理される。
 - `lib/map.ts` と `lib/ops.ts`: 名前・ID・経路でノードを指して追加・改名・移動・削除・折りたたみ、Markdown の箇条書きの取り込みと書き出し。Durable Object と CLI が共有する。
 - `cli.ts`: API を呼ぶ CLI。

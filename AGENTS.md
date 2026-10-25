@@ -10,15 +10,14 @@ CLI の変更はブラウザに即時に（WebSocket で）反映されます。
 npm run dev                # 手元の開発サーバー http://127.0.0.1:4381（認証なし）
 ```
 
-CLI は既定で手元の開発サーバーにつなぎます。デプロイ先を使うときは環境変数を設定します。
+CLI は既定で手元の開発サーバーにつなぎます。デプロイ先を使うときは `~/.config/mindmap/env` に書きます（環境変数でも同じ。環境変数が優先）。
 
 ```sh
-export MINDMAP_URL=https://<デプロイ先のホスト>
-export MINDMAP_ACCESS_CLIENT_ID=<サービストークンの Client ID>
-export MINDMAP_ACCESS_CLIENT_SECRET=<サービストークンの Client Secret>
+MINDMAP_URL=https://mindmap.tomoya-12.workers.dev
+MINDMAP_TOKEN=<API トークン>
 ```
 
-`Cloudflare Access に止められました` と出たら、サービストークンの値を確かめてください。
+`ログインしていません` と出たら、`MINDMAP_TOKEN` を確かめてください。トークンの値は出力に書かないでください。
 
 ## マップは複数ある
 
@@ -114,7 +113,8 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 ## 中身（変更するとき）
 
 - `public/index.html`: ページ。1ファイルで依存なし。読み書きは `/api/map`（版番号つき）、変更は `/api/ws`（WebSocket）で受ける。
-- `src/worker.ts`: 入口。ページは静的アセット（`public/`）が配り、`/api/` は Cloudflare Access の JWT を確かめてから Durable Object へ渡す。
+- `src/worker.ts`: 入口。ページは静的アセット（`public/`）が配り、`/api/` は Durable Object へ渡す。
+- `src/auth.ts`: Google ログイン（ブラウザ）と API トークン（CLI）の確認。Durable Object の中で動く。
 - `src/store.ts`: Durable Object `MindmapStore`（1つだけ）。全マップと「今選んでいるマップ」を SQLite に持ち、API と WebSocket の配信を受け持つ。
 - `lib/map.ts`: ノードの解決、追加・移動・削除、箇条書きの読み書き。Durable Object と CLI が共有する。
 - `lib/ops.ts`: CLI の操作（add・move など）を、名前の解決ごとマップに当てる。Durable Object が呼ぶ。
