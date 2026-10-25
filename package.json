@@ -1,14 +1,22 @@
 {
-  "name": "mindmap-prototype",
+  "name": "mindmap",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MindNode 風のマインドマップ試作。ブラウザのページと、エージェント向けの CLI。",
+  "description": "MindNode 風のマインドマップ。ブラウザのページと、エージェント向けの CLI。裏側は Cloudflare Workers と Durable Object。",
   "scripts": {
-    "start": "node server.mjs",
-    "cli": "node cli.mjs"
+    "dev": "wrangler dev --ip 127.0.0.1 --port 4381",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types --strict-vars=false",
+    "typecheck": "npm run types && tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
+    "cli": "node cli.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=23.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.152.0"
   }
 }

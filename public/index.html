@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mind Map Prototype</title>
+<title>Mind Map</title>
 <!-- 静的ファイル配信やサーバー再起動なしで使えるよう、favicon.svg を埋め込む。 -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2216%22%20fill%3D%22%2324262d%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke-width%3D%225%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M28%2032H22Q16%2032%2016%2024V18H12%22%20stroke%3D%22%23e9a21a%22%2F%3E%3Cpath%20d%3D%22M36%2032H42Q48%2032%2048%2024V16H52%22%20stroke%3D%22%233fa34d%22%2F%3E%3Cpath%20d%3D%22M36%2032H42Q48%2032%2048%2040V48H52%22%20stroke%3D%22%237c5cde%22%2F%3E%3Cpath%20d%3D%22M28%2032H22Q16%2032%2016%2040V46H12%22%20stroke%3D%22%23e4572e%22%2F%3E%3C%2Fg%3E%3Crect%20x%3D%226%22%20y%3D%2212%22%20width%3D%2214%22%20height%3D%2210%22%20rx%3D%224%22%20fill%3D%22%23e9a21a%22%2F%3E%3Crect%20x%3D%2244%22%20y%3D%2210%22%20width%3D%2214%22%20height%3D%2210%22%20rx%3D%224%22%20fill%3D%22%233fa34d%22%2F%3E%3Crect%20x%3D%2244%22%20y%3D%2244%22%20width%3D%2214%22%20height%3D%2210%22%20rx%3D%224%22%20fill%3D%22%237c5cde%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2242%22%20width%3D%2214%22%20height%3D%2210%22%20rx%3D%224%22%20fill%3D%22%23e4572e%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2222%22%20width%3D%2220%22%20height%3D%2220%22%20rx%3D%227%22%20fill%3D%22%236ea2ff%22%20stroke%3D%22%2324262d%22%20stroke-width%3D%223%22%2F%3E%3C%2Fsvg%3E">
 <style>
@@ -140,7 +140,7 @@
   const PALETTE = ['#e4572e', '#e9a21a', '#3fa34d', '#1f9e8f', '#2f6feb', '#7c5cde', '#c63fb5', '#e0456f'];
   const MIN_SCALE = 0.1;
   const NODE_H = 34, ROOT_H = 46, PAD = 14, ROOT_PAD = 20, HGAP = 56, VGAP = 14, MIN_W = 44;
-  const STORAGE_KEY = 'mindmap-prototype-v1';
+  const STORAGE_KEY = 'mindmap-v1';
 
   const svg = document.getElementById('canvas');
   const world = document.getElementById('world');
@@ -208,22 +208,38 @@
     for (const n of nodes.values()) { const o = old.get(n.id); if (o) { n.vx = o.vx; n.vy = o.vy; } }
     if (!nodes.has(selectedId)) selectedId = null;
   }
-  // 保存先はサーバーの /api/map?name=<マップ名>。届かないときは localStorage だけに残す。
-  let lastSaved = '', saveTimer = null, mapName = null;
+  // 保存先はサーバーの /api/map?name=<マップ名>。読み込んだときの版番号 version を添えて丸ごと置き換え、
+  // 別の場所で先に書かれていたら（409）サーバーの最新を取り込む。届かないときは localStorage だけに残す。
+  let lastSaved = '', saveTimer = null, inflight = null, mapName = null, version = 0;
   const mapSelect = document.getElementById('map-select');
   function mapQuery() { return mapName ? '?name=' + encodeURIComponent(mapName) : ''; }
   function save() {
-    const text = JSON.stringify(serialize());
-    try { localStorage.setItem(STORAGE_KEY, text); } catch (e) { /* 保存できない環境では無視 */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(serialize())); } catch (e) { /* 保存できない環境では無視 */ }
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      lastSaved = text;
-      fetch('/api/map' + mapQuery(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text }).catch(() => {});
-    }, 150);
+    saveTimer = setTimeout(flush, 150);
+  }
+  // 書き込みは1本ずつ送る。中身は送る時点の状態にする。
+  async function flush() {
+    saveTimer = null;
+    if (inflight !== null) { saveTimer = setTimeout(flush, 150); return; }
+    const text = JSON.stringify(serialize());
+    if (text === lastSaved) return;
+    const name = mapName;
+    inflight = text;
+    try {
+      const r = await fetch('/api/map' + mapQuery(), { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: `{"baseVersion":${version},"map":${text}}` });
+      const body = await r.json();
+      if (name !== mapName) return; // 送っている間に別のマップへ切り替えた
+      if (r.ok) {
+        if (!mapName && body.name) setMapName(body.name);
+        if (body.version > version) { version = body.version; lastSaved = text; }
+      } else if (r.status === 409 && body.map && body.version > version) applyExternal(body.map, body.version);
+    } catch (e) { /* サーバーなし */ } finally { inflight = null; }
   }
   function setMapName(name) {
     mapName = name || null;
-    document.title = mapName ? `${mapName} - Mind Map` : 'Mind Map Prototype';
+    document.title = mapName ? `${mapName} - Mind Map` : 'Mind Map';
     if (mapSelect.value !== (mapName || '')) mapSelect.value = mapName || '';
   }
   function renderMaps(list) {
@@ -237,7 +253,8 @@
     mapSelect.value = mapName || list.current || '';
   }
   async function refreshMaps() {
-    try { const r = await fetch('/api/maps'); if (r.ok) renderMaps(await r.json()); } catch (e) { /* サーバーなし */ }
+    try { const r = await fetch('/api/maps'); if (r.ok) { const list = await r.json(); renderMaps(list); return list; } } catch (e) { /* サーバーなし */ }
+    return null;
   }
   // 別のマップに切り替える。取り消し履歴はマップごとなので捨てる。
   async function switchTo(name) {
@@ -245,10 +262,11 @@
     try { const r = await fetch('/api/map?name=' + encodeURIComponent(name)); if (r.ok) data = await r.json(); } catch (e) { /* サーバーなし */ }
     if (!data || !Array.isArray(data.nodes)) return;
     if (editingId) { editor.style.display = 'none'; editingId = null; }
+    clearTimeout(saveTimer); saveTimer = null;
     setMapName(name);
     undoStack = []; redoStack = [];
     nodes = new Map();
-    restore(data); lastSaved = JSON.stringify(serialize());
+    restore(data); lastSaved = JSON.stringify(serialize()); version = data.version || 0;
     selectedId = roots()[0] ? roots()[0].id : null;
     layout(); syncDom(); fitView();
   }
@@ -259,10 +277,10 @@
     switchTo(name);
   });
   document.getElementById('btn-add-map').addEventListener('click', async () => {
-    const name = (prompt('新しいマップの名前（ファイル名になります）') || '').trim();
+    const name = (prompt('新しいマップの名前') || '').trim();
     if (!name) return;
     try {
-      const r = await fetch('/api/maps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, title: name }) });
+      const r = await fetch('/api/maps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, title: name, select: true }) });
       const body = await r.json();
       if (!r.ok) { alert(body.error || '作れませんでした'); return; }
       await refreshMaps(); await switchTo(body.name);
@@ -273,28 +291,54 @@
     try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch (e) { /* 壊れた保存は無視 */ }
     return null;
   }
-  // CLI など外部からの変更を SSE で受け取り、取り消せる形で取り込む。
+  // CLI など外部からの変更を WebSocket で受け取り、取り消せる形で取り込む。切れたらつなぎ直し、
+  // つながるたびに、切れていた間の変更（版が進んだマップと、選んでいるマップ）を取り込む。
   function connectEvents() {
-    let es;
-    try { es = new EventSource('/api/events'); } catch (e) { return; }
-    es.addEventListener('map', e => {
-      let msg, data;
-      try { msg = JSON.parse(e.data); data = JSON.parse(msg.text); } catch (err) { return; }
-      if (!msg || msg.name !== mapName) return;
-      if (!data || !Array.isArray(data.nodes) || JSON.stringify(normalize(data)) === lastSaved) return;
-      applyExternal(data);
-    });
-    es.addEventListener('current', e => {
-      let name; try { name = JSON.parse(e.data); } catch (err) { return; }
-      if (name && name !== mapName) switchTo(name);
-    });
-    es.addEventListener('maps', e => { try { renderMaps(JSON.parse(e.data)); } catch (err) { /* 無視 */ } });
+    let retry = 0, pingTimer = null;
+    const open = () => {
+      let ws;
+      try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws'); } catch (e) { return; }
+      ws.onopen = () => {
+        retry = 0;
+        resync();
+        clearInterval(pingTimer);
+        pingTimer = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 30000);
+      };
+      ws.onmessage = e => {
+        let msg; try { msg = JSON.parse(e.data); } catch (err) { return; } // pong
+        if (msg.type === 'map') onRemoteMap(msg);
+        else if (msg.type === 'current') { if (msg.name && msg.name !== mapName) switchTo(msg.name); }
+        else if (msg.type === 'maps') renderMaps(msg);
+      };
+      ws.onclose = () => { clearInterval(pingTimer); setTimeout(open, Math.min(30000, 1000 * 2 ** retry++)); };
+    };
+    open();
   }
-  function applyExternal(data) {
+  function onRemoteMap(msg) {
+    if (msg.name !== mapName || !msg.map || !Array.isArray(msg.map.nodes) || msg.version <= version) return;
+    const text = JSON.stringify(normalize(msg.map));
+    // 自分が送った書き込みの知らせ。PUT の返事より先に届くことがある
+    if (text === inflight || text === lastSaved) { version = msg.version; lastSaved = text; return; }
+    applyExternal(msg.map, msg.version);
+  }
+  async function resync() {
+    const list = await refreshMaps();
+    if (list && list.current && list.current !== mapName) { switchTo(list.current); return; }
+    if (!mapName) return;
+    try {
+      const r = await fetch('/api/map' + mapQuery());
+      if (!r.ok) return;
+      const data = await r.json();
+      if (data.version > version) applyExternal(data, data.version);
+    } catch (e) { /* サーバーなし */ }
+  }
+  // 外からの版で置き換える。まだ送っていない手元の変更は捨てる（⌘Z で戻せる）。
+  function applyExternal(data, newVersion) {
     if (editingId) { editor.style.display = 'none'; editingId = null; }
+    clearTimeout(saveTimer); saveTimer = null;
     pushUndo();
     restore(data);
-    lastSaved = JSON.stringify(serialize());
+    lastSaved = JSON.stringify(serialize()); version = newVersion;
     layout(); syncDom(); requestDraw();
   }
   function pushUndo() { undoStack.push(JSON.stringify(serialize())); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
@@ -875,7 +919,7 @@
 
   // ---------- 起動 ----------
   loadInitial().then(data => {
-    if (data) { if (data.name) setMapName(data.name); restore(data); lastSaved = JSON.stringify(serialize()); selectedId = roots()[0].id; view = { tx: vw() / 2, ty: vh() / 2, s: 1 }; commit(); fitView(); }
+    if (data) { if (data.name) setMapName(data.name); restore(data); lastSaved = JSON.stringify(serialize()); version = data.version || 0; selectedId = roots()[0].id; view = { tx: vw() / 2, ty: vh() / 2, s: 1 }; commit(); fitView(); }
     else newMap();
     refreshMaps();
     connectEvents();

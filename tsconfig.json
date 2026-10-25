@@ -1,0 +1,18 @@
+{
+  // Worker と Durable Object（src/）と、共有の lib/ を Workers の型で確かめる。
+  // CLI は tsconfig.cli.json で Node の型を使って確かめる。
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "lib", "worker-configuration.d.ts"]
+}

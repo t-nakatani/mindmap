@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mindmap",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  // ページ（index.html と favicon.svg）は静的アセットとして配る。/api/ は Worker が受ける。
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  // 全マップと「今選んでいるマップ」を持つ Durable Object。インスタンスは1つだけ使う。
+  "durable_objects": {
+    "bindings": [{ "name": "STORE", "class_name": "MindmapStore" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MindmapStore"] }],
+  // Cloudflare Access の検証に使う。デプロイ前に本人のチームと Access アプリの AUD を入れる。
+  // 空のままだと、手元（localhost）以外からの /api/ はすべて断る。
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": ""
+  },
+  "observability": { "enabled": true }
+}

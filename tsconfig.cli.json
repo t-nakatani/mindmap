@@ -1,0 +1,17 @@
+{
+  // CLI は node cli.ts でそのまま動かす（Node の型の取り除き）。消すだけで済む書き方に限る。
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": ["cli.ts", "lib"]
+}

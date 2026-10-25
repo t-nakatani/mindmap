@@ -1,36 +1,44 @@
 # エージェント向け: このマインドマップの動かし方
 
-このリポジトリは、ブラウザで動くマインドマップと、それを操作する CLI です。
-エージェントは **CLI だけ** でマップを読み書きします。`data/` の JSON を直接編集しないでください。
-サーバーが動いていれば、CLI の変更はブラウザに即時に反映されます。人がブラウザで動かした内容も同じファイルに入ります。
+このリポジトリは、ブラウザで動くマインドマップと、それを操作する CLI です。裏側は Cloudflare の Worker と Durable Object です。
+エージェントは **CLI だけ** でマップを読み書きします。CLI は API を呼び、書き込みはサーバー側で順に行われます。
+CLI の変更はブラウザに即時に（WebSocket で）反映されます。人がブラウザで動かした内容も同じところに入ります。
 
-## 起動
+## つなぎ先
 
 ```sh
-node server.mjs            # http://127.0.0.1:4380 でページとAPIを出す
+npm run dev                # 手元の開発サーバー http://127.0.0.1:4381（認証なし）
 ```
 
-ポートは `PORT`、マップの置き場は `MINDMAP_DIR` で変えられます（既定は `data/`）。
+CLI は既定で手元の開発サーバーにつなぎます。デプロイ先を使うときは環境変数を設定します。
+
+```sh
+export MINDMAP_URL=https://<デプロイ先のホスト>
+export MINDMAP_ACCESS_CLIENT_ID=<サービストークンの Client ID>
+export MINDMAP_ACCESS_CLIENT_SECRET=<サービストークンの Client Secret>
+```
+
+`Cloudflare Access に止められました` と出たら、サービストークンの値を確かめてください。
 
 ## マップは複数ある
 
-`data/` に `<マップ名>.json` が1つずつ置かれ、画面と CLI は「今選んでいるマップ」（`data/.current`）を対象にします。
+マップは名前で区別します。画面と CLI は「今選んでいるマップ」を対象にします。
 画面のツールバー左端のセレクトと CLI の `use` は同じ選択を動かすので、人が画面で切り替えればエージェントの対象も変わり、逆も同じです。
 
 ```sh
-node cli.mjs maps                       # 一覧。* が今選んでいるマップ
-node cli.mjs use 採用計画               # 切り替える（画面も切り替わる）
-node cli.mjs new "採用計画" --map 採用計画   # 新しいマップ（ファイル）を作る。選択は変わらない
-node cli.mjs show --map 採用計画        # どのコマンドも --map で対象だけ変えられる
+node cli.ts maps                       # 一覧。* が今選んでいるマップ
+node cli.ts use 採用計画               # 切り替える（画面も切り替わる）
+node cli.ts new "採用計画" --map 採用計画   # 新しいマップを作る。選択は変わらない
+node cli.ts show --map 採用計画        # どのコマンドも --map で対象だけ変えられる
 ```
 
 人が見ているマップを勝手に切り替えないでください。別のマップを触るときは `use` ではなく `--map` を付けます。
-マップ名はファイル名になります。スラッシュと先頭のドットは使えません。
+マップ名にスラッシュと先頭のドットは使えません。64文字までです。
 
 ## まず現状を見る
 
 ```sh
-node cli.mjs show
+node cli.ts show
 ```
 
 ```
@@ -56,19 +64,19 @@ node cli.mjs show
 ## 操作
 
 ```sh
-node cli.mjs add "外注費" --under 予算                 # 子を足す
-node cli.mjs add "外注費" --under 予算 --after 広告費   # 兄弟の後ろに入れる
-node cli.mjs rename 北米 "北米（優先）"
-node cli.mjs move 人件費 --under 市場/海外               # 子ごと移す
-node cli.mjs remove 広告費                               # 子ごと消す
-node cli.mjs layout 新規事業の検討 right                 # マップの配置を右だけにする（both / right / left）
-node cli.mjs side 予算 left                              # 枝を中心の左へ出す（片側のマップは両側になる）
-node cli.mjs collapse 市場                               # 枝を閉じる
-node cli.mjs expand 市場
-node cli.mjs export                                      # Markdown で書き出す（ID なし）
-node cli.mjs add "採用" --root                           # 新しい中心ノード（独立したマップ）を足す
-node cli.mjs move 市場 --root                            # 枝を切り離して独立したマップにする
-node cli.mjs move 採用 --under 予算                      # 中心ノードを別のマップの枝にする
+node cli.ts add "外注費" --under 予算                 # 子を足す
+node cli.ts add "外注費" --under 予算 --after 広告費   # 兄弟の後ろに入れる
+node cli.ts rename 北米 "北米（優先）"
+node cli.ts move 人件費 --under 市場/海外               # 子ごと移す
+node cli.ts remove 広告費                               # 子ごと消す
+node cli.ts layout 新規事業の検討 right                 # マップの配置を右だけにする（both / right / left）
+node cli.ts side 予算 left                              # 枝を中心の左へ出す（片側のマップは両側になる）
+node cli.ts collapse 市場                               # 枝を閉じる
+node cli.ts expand 市場
+node cli.ts export                                      # Markdown で書き出す（ID なし）
+node cli.ts add "採用" --root                           # 新しい中心ノード（独立したマップ）を足す
+node cli.ts move 市場 --root                            # 枝を切り離して独立したマップにする
+node cli.ts move 採用 --under 予算                      # 中心ノードを別のマップの枝にする
 ```
 
 `add` で `--under` を省くと、中心ノードが1つのときはその下に入ります。中心ノードが複数あるときは `--under` か `--root` が必要です。
@@ -87,10 +95,10 @@ cat > /tmp/outline.md <<'EOF'
 - 予算
   - 広告費
 EOF
-node cli.mjs import /tmp/outline.md --replace      # すべてのマップを作り直す
-node cli.mjs import /tmp/outline.md                # 見出しがあれば、新しいマップとして足す
-node cli.mjs import /tmp/outline.md --under リスク  # 既存のノードの下に足す
-printf -- '- 法務\n- 技術\n' | node cli.mjs import - --under リスク   # 標準入力からも読める
+node cli.ts import /tmp/outline.md --replace      # すべてのマップを作り直す
+node cli.ts import /tmp/outline.md                # 見出しがあれば、新しいマップとして足す
+node cli.ts import /tmp/outline.md --under リスク  # 既存のノードの下に足す
+printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # 標準入力からも読める
 ```
 
 `--replace` は人が置いた位置や折りたたみも消します。既存のマップに足すときは `--under` を使ってください。
@@ -105,10 +113,13 @@ printf -- '- 法務\n- 技術\n' | node cli.mjs import - --under リスク   # �
 
 ## 中身（変更するとき）
 
-- `index.html`: ページ。1ファイルで依存なし。保存先は `/api/map`、変更は `/api/events`（SSE）で受ける。
-- `server.mjs`: ページの配信、`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、SSE（map / current / maps）。`data/` の変化を見て配る。
-- `cli.mjs`: コマンドの入口。
-- `lib/map.mjs`: ファイル入出力、ノードの解決、追加・移動・削除、箇条書きの読み書き。サーバーと CLI が共有する。
-- `data/<マップ名>.json`: 正本。`{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }] }`。`data/.current` が今選んでいるマップ名。
+- `public/index.html`: ページ。1ファイルで依存なし。読み書きは `/api/map`（版番号つき）、変更は `/api/ws`（WebSocket）で受ける。
+- `src/worker.ts`: 入口。ページは静的アセット（`public/`）が配り、`/api/` は Cloudflare Access の JWT を確かめてから Durable Object へ渡す。
+- `src/store.ts`: Durable Object `MindmapStore`（1つだけ）。全マップと「今選んでいるマップ」を SQLite に持ち、API と WebSocket の配信を受け持つ。
+- `lib/map.ts`: ノードの解決、追加・移動・削除、箇条書きの読み書き。Durable Object と CLI が共有する。
+- `lib/ops.ts`: CLI の操作（add・move など）を、名前の解決ごとマップに当てる。Durable Object が呼ぶ。
+- `cli.ts`: コマンドの入口。`node cli.ts` でそのまま動く（Node 23.6 以上）。
+- 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }] }`。版番号はマップごとに書き込むたびに1つ上がる。
   `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置、`layout` は配置（`both`・`right`・`left`、省略時は `both`）。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
   中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。
+- 型の確認は `npm run typecheck`。
