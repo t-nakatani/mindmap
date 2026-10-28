@@ -757,12 +757,14 @@
   // 中心ノードは自由に置ける。ほかのノードは位置を持たない。離した場所で付け替えか並べ替えをし、配置は自動に任せる。
   const NO_OFFSET = { x: 0, y: 0 };
   function dragOffset(n) { return drag && drag.sub && drag.sub.has(n.id) ? drag.off : NO_OFFSET; }
-  // 点 (x, y) に重なったノードの子にする。
+  // 点 (x, y) に重なったノードの子にする。左右は親子の間の半分まで広く取る。
+  // 上下は広げない。兄弟の間（VGAP）は並べ替えの当たりに残す。
+  const DROP_MARGIN_X = HGAP / 2;
   function childDropAt(x, y, exclude) {
     let best = null, bestD = Infinity;
     for (const c of nodes.values()) {
       if (exclude.has(c.id) || c.hidden) continue;
-      if (Math.abs(x - c.cx) > c.w / 2 || Math.abs(y - c.cy) > c.h / 2) continue;
+      if (Math.abs(x - c.cx) > c.w / 2 + DROP_MARGIN_X || Math.abs(y - c.cy) > c.h / 2) continue;
       const d = Math.hypot(c.cx - x, c.cy - y);
       if (d < bestD) { bestD = d; best = c; }
     }
