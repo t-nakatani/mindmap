@@ -163,10 +163,10 @@ export class MindmapStore extends DurableObject<Env> {
     }
     this.broadcastMaps();
   }
-  /** 共有をやめた人の接続を閉じる。 */
+  /** 共有をやめた人の接続を閉じる。閉じる知らせが届かないこともあるので、先に revoked を送る。 */
   async revoke(accountId: string) {
     for (const ws of this.ctx.getWebSockets(`account:${accountId}`)) {
-      try { ws.close(4003, 'revoked'); } catch { /* もう閉じている */ }
+      try { ws.send(JSON.stringify({ type: 'revoked' })); ws.close(4003, 'revoked'); } catch { /* もう閉じている */ }
     }
   }
 
