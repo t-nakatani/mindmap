@@ -172,6 +172,7 @@
   <span><kbd>文字キー</kbd> 選択中のノードを書き換え</span>
   <span><kbd>ダブルクリック</kbd> 文字を編集</span>
   <span><kbd>Delete</kbd> ノードを削除</span>
+  <span><kbd>⌘X</kbd> <kbd>⌘C</kbd> 子孫ごと切り取り / コピー、<kbd>⌘V</kbd> 選択中のノードの下へ貼り付け</span>
   <span><kbd>⌘.</kbd> 枝を折りたたむ / 開く（端の丸でも）</span>
   <span><kbd>矢印</kbd> ノード間を移動</span>
   <span><kbd>⌘←</kbd> <kbd>⌘→</kbd> 選択中の枝を中心の左 / 右へ</span>
@@ -657,6 +658,131 @@
   }
   function descendantCount(n) { let c = 0; for (const id of n.children) c += 1 + descendantCount(nodes.get(id)); return c; }
 
+  // ---------- 切り取り・コピー・貼り付け ----------
+  // ノードは子孫ごと写す。クリップボードには箇条書き（CLI の import と同じ形）を書き、ほかのアプリやタブへも貼れる。
+  // 同じページの中では、折りたたみや枝の左右も持った木（clip）を使うので、マップを切り替えてもそのまま移せる。
+  let clip = null; // { text, trees: [{ text, root, layout, side, colorIndex, collapsed, children }] }
+  function snapshot(n) {
+    return { text: n.text, root: isRoot(n), layout: isRoot(n) ? layoutOf(n) : undefined, side: n.side, colorIndex: n.colorIndex,
+      collapsed: n.collapsed, children: n.children.map(id => snapshot(nodes.get(id))) };
+  }
+  function toOutline(trees) {
+    const lines = [];
+    const walk = (it, d) => { lines.push('  '.repeat(d) + '- ' + it.text); for (const c of it.children) walk(c, d + 1); };
+    for (const t of trees) {
+      if (t.root) { lines.push('# ' + t.text); for (const c of t.children) walk(c, 0); } else walk(t, 0);
+    }
+    return lines.join('\n') + '\n';
+  }
+  // 貼られた文字を木の並びに読む。インデントが階層、「# 見出し」は中心ノード。箇条書きの記号がない行もそのまま項目にする。
+  function parseOutline(text) {
+    const trees = [];
+    let stack = [{ indent: -1, children: trees }];
+    for (const raw of text.split(/\r?\n/)) {
+      if (!raw.trim()) continue;
+      const h = raw.match(/^#+\s+(.+?)\s*$/);
+      if (h) {
+        const it = { text: h[1], root: true, children: [] };
+        trees.push(it); stack = [{ indent: -1, children: it.children }];
+        continue;
+      }
+      const m = raw.match(/^(\s*)(?:(?:[-*+]|\d+[.)])\s+)?(.*?)\s*$/);
+      const indent = m[1].replace(/\t/g, '    ').length;
+      const it = { text: m[2], children: [] };
+      while (stack[stack.length - 1].indent >= indent) stack.pop();
+      stack[stack.length - 1].children.push(it);
+      stack.push({ indent, children: it.children });
+    }
+    return trees;
+  }
+  // 選択中のノードを写す。切り取りなら消す（最後の中心ノードは消さずに写すだけ）。写した文字を返す。
+  function copySelected(cut) {
+    const n = nodes.get(selectedId); if (!n) return null;
+    const trees = [snapshot(n)];
+    clip = { text: toOutline(trees), trees };
+    if (cut) deleteNode(n.id);
+    return clip.text;
+  }
+  // 選択中のノードの子として足す。選択がなければ、画面の真ん中に新しいマップとして置く。
+  function pasteTrees(trees) {
+    if (!trees.length) return;
+    pushUndo();
+    const build = (it, parentId) => {
+      const n = makeNode(it.text, parentId);
+      n.collapsed = !!it.collapsed && it.children.length > 0;
+      nodes.set(n.id, n);
+      for (const c of it.children) n.children.push(build(c, n.id).id);
+      return n;
+    };
+    const parent = nodes.get(selectedId);
+    let first = null;
+    if (parent) {
+      parent.collapsed = false;
+      for (const it of trees) {
+        const n = build(it, parent.id);
+        if (isRoot(parent)) { n.side = newSide(parent); n.colorIndex = nextColor(parent); }
+        parent.children.push(n.id);
+        first = first || n;
+      }
+    } else {
+      // 重ならないよう、いまあるノードの下に縦に並べ、最初のマップへ画面を寄せる
+      let bottom = -Infinity;
+      for (const n of nodes.values()) if (!n.hidden) bottom = Math.max(bottom, n.cy + n.h / 2);
+      const added = trees.map(it => {
+        const r = build(it, null);
+        r.layout = it.layout || 'both';
+        r.children.forEach((id, j) => {
+          const k = nodes.get(id), src = it.children[j];
+          k.side = r.layout !== 'both' ? r.layout : it.root && src.side ? src.side : j % 2 ? 'left' : 'right';
+          k.colorIndex = it.root && src.colorIndex != null ? src.colorIndex : j % PALETTE.length;
+        });
+        return r;
+      });
+      layout();
+      const x = toWorld(vw() / 2, vh() / 2).x;
+      for (const r of added) { const h = subH(r); r.dx = x; r.dy = bottom + 80 + h / 2; bottom = r.dy + h / 2; }
+      first = added[0];
+      view.ty = vh() / 2 - first.dy * view.s;
+    }
+    selectedId = first.id;
+    commit();
+  }
+  // 文字の編集中や入力欄、ページの文字を選んでいるときは、ふつうの文字のコピー・貼り付けにする。
+  function textClipboard(e) {
+    if (editingId || e.target === mapSelect || (e.target.closest && e.target.closest('input, textarea, #help'))) return true;
+    const s = window.getSelection();
+    return !!(s && !s.isCollapsed && !editor.contains(s.anchorNode));
+  }
+  // ⌘C・⌘X・⌘V は copy・cut・paste のイベントで受ける。イベントが来ないブラウザ向けに、キーを押した直後に代わりを走らせる。
+  let pendingClip = null;
+  function onClipKey(key) {
+    pendingClip = key;
+    setTimeout(() => {
+      if (pendingClip !== key) return;
+      pendingClip = null;
+      if (key === 'v') { if (clip) pasteTrees(clip.trees); return; }
+      const text = copySelected(key === 'x');
+      if (text !== null && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+    }, 0);
+  }
+  for (const type of ['copy', 'cut']) document.addEventListener(type, e => {
+    pendingClip = null;
+    if (textClipboard(e)) return;
+    const text = copySelected(type === 'cut');
+    if (text === null) return;
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', text);
+  });
+  document.addEventListener('paste', e => {
+    pendingClip = null;
+    if (textClipboard(e)) return;
+    const text = e.clipboardData.getData('text/plain').replace(/\r\n/g, '\n');
+    const trees = clip && text.trim() === clip.text.trim() ? clip.trees : parseOutline(text);
+    if (!trees.length) return;
+    e.preventDefault();
+    pasteTrees(trees);
+  });
+
   // ---------- レイアウト ----------
   function measure(n) {
     const root = isRoot(n);
@@ -1061,6 +1187,7 @@
     if (meta && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); if (selectedId) setSide(selectedId, e.key === 'ArrowLeft' ? 'left' : 'right'); return;
     }
+    if (meta && !e.altKey && ['c', 'x', 'v'].includes(e.key.toLowerCase())) { onClipKey(e.key.toLowerCase()); return; }
     if (meta) return;
     if (!selectedId) { if (e.key === 'Tab') { e.preventDefault(); selectedId = roots()[0].id; requestDraw(); } return; }
     switch (e.key) {
