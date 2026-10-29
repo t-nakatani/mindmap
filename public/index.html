@@ -695,17 +695,17 @@
     }
     return trees;
   }
-  // 選択中のノードを写す。切り取りなら消す（最後の中心ノードは消さずに写すだけ）。写した文字を返す。
+  // 選択中のノードを写す。切り取りなら消す（最後の中心ノードと、閲覧のみの領域では消さずに写すだけ）。写した文字を返す。
   function copySelected(cut) {
     const n = nodes.get(selectedId); if (!n) return null;
     const trees = [snapshot(n)];
     clip = { text: toOutline(trees), trees };
-    if (cut) deleteNode(n.id);
+    if (cut && !readOnly) deleteNode(n.id);
     return clip.text;
   }
   // 選択中のノードの子として足す。選択がなければ、画面の真ん中に新しいマップとして置く。
   function pasteTrees(trees) {
-    if (!trees.length) return;
+    if (!trees.length || readOnly) return;
     pushUndo();
     const build = (it, parentId) => {
       const n = makeNode(it.text, parentId);
@@ -775,7 +775,7 @@
   });
   document.addEventListener('paste', e => {
     pendingClip = null;
-    if (textClipboard(e)) return;
+    if (readOnly || textClipboard(e)) return;
     const text = e.clipboardData.getData('text/plain').replace(/\r\n/g, '\n');
     const trees = clip && text.trim() === clip.text.trim() ? clip.trees : parseOutline(text);
     if (!trees.length) return;
@@ -1172,13 +1172,14 @@
       else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
       return;
     }
-    if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (!readOnly) e.shiftKey ? redo() : undo(); return; }
     if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1.2); return; }
     if (meta && e.key === '-') { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1 / 1.2); return; }
     if (meta && e.key === '0') { e.preventDefault(); fitView(); return; }
-    // 閲覧のみでは、移動と表示の操作だけ受ける
+    // 閲覧のみでは、移動と表示とコピーだけ受ける
     if (readOnly) {
       if (e.key.startsWith('Arrow') && !meta && selectedId) { e.preventDefault(); navigate(e.key); }
+      else if (meta && !e.altKey && ['c', 'x'].includes(e.key.toLowerCase())) onClipKey(e.key.toLowerCase());
       else if (e.key === 'Escape') { selectedId = null; requestDraw(); }
       else if (e.key === 'Tab' && !selectedId) { e.preventDefault(); selectedId = roots()[0].id; requestDraw(); }
       return;
