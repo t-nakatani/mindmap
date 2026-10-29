@@ -5,3 +5,5 @@ GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=
 ALLOWED_EMAILS=you@example.com
 API_TOKEN=
+# API_TOKEN で動く人。領域を分ける前のマップもこの人の領域へ移る
+OWNER_EMAIL=you@example.com

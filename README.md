@@ -60,6 +60,18 @@ npm run deploy                         # https://mindmap.tomoya-12.workers.dev
 - `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`: Google Cloud の OAuth クライアント（ウェブ アプリケーション）
 - `ALLOWED_EMAILS`: ログインを通すアドレス。カンマ区切り
 - `API_TOKEN`: CLI 用。長い乱数にする
+- `OWNER_EMAIL`: `API_TOKEN` が動く人。領域を分ける前のマップも、この人の領域へ移る
+
+### 領域と共有
+
+ログインする Google アカウントごとに、別の「領域」（マップの置き場）を持つ。アカウントは Google の sub（変わらない利用者番号）に結び付けた
+`a_…` の ID で、領域は `s_…` の ID で区別する。メールアドレスは表示と共有の指定にだけ使うので、Google 側でアドレスを変えても領域はそのまま残る。
+
+- 名簿は Durable Object `main` にある（アカウント・領域・共有・セッション）。領域のマップは Durable Object `space:<領域ID>` に入る。
+- 自分の領域は、画面の「共有」か `node cli.ts share add <メール>` で、ほかのアカウントに読み取り専用で見せられる。相手は `ALLOWED_EMAILS` にある人に限る。まだ一度もログインしていない人にも共有でき、その人が初めてログインしたときに結び付く。
+- 共有された人は、画面のツールバー左端のセレクトで領域を切り替えて閲覧する。書き込みはサーバーが断る。共有を外すと、開いている画面は自分の領域に戻る。
+- 領域を分ける前に `main` に入っていたマップは、`OWNER_EMAIL` の人が初めて開いたとき（ログインか API トークン）に、その人の領域へ一度だけ写る。`main` の元の行は控えとして残る。
+- 領域を分けたときにセッションの形が変わったので、デプロイ後は一度ログインし直す。
 
 secret を入れ直すときは、値を `.env` 形式で書いたファイルをリポジトリの外に置き、デプロイと一緒に上げる。終わったらファイルは消す。
 
@@ -88,7 +100,8 @@ CLI は `~/.config/mindmap/env` に `MINDMAP_URL` と `MINDMAP_TOKEN`（`API_TOK
 - 文字キーで選択中のノードを書き換える。ダブルクリックで編集する。Escape で取り消す。
 - ⌘. か、ノードの外側に出る丸をクリックすると枝を折りたたむ。折りたたんだノードには子孫の数が出る。折りたたんだノードに Tab で子を足すと自動で開く。
 - Delete で削除、⌘Z で取り消し、⌘⇧Z でやり直し、⌘0 で全体を表示する。
-- マップを複数持てる。ツールバー左端のセレクトで切り替え、「マップを追加」で新しいマップを作る。選択は CLI の `use` と共通で、どちらで切り替えても画面と CLI の対象が揃う。
+- マップを複数持てる。ツールバーのセレクトで切り替え、「マップを追加」で新しいマップを作る。選択は CLI の `use` と共通で、どちらで切り替えても画面と CLI の対象が揃う。
+- Google アカウントごとに領域が分かれ、自分の領域をほかのアカウントに読み取り専用で共有できる（上の「領域と共有」）。
 - CLI からの変更は WebSocket で即時に反映され、⌘Z で取り消せる。接続が切れたらつなぎ直し、その間の変更を取り込む。
 - 保存は版番号つき。別の場所で先に書かれていたら上書きせず、サーバーの最新を取り込む（自分の変更は ⌘Z で戻せる）。
 - サーバーがないときは localStorage だけに保存して動く。
@@ -96,9 +109,10 @@ CLI は `~/.config/mindmap/env` に `MINDMAP_URL` と `MINDMAP_TOKEN`（`API_TOK
 ## 中身
 
 - `public/index.html`: データは `nodes`（Map）。親のないノードが中心ノードで、`dx, dy` が位置。`layout()` が目標位置を決め、`frame()` が表示位置を補間し、`draw()` が SVG を更新する。操作の前に `pushUndo()` で状態を JSON で積む。
-- `src/worker.ts`: 入口。`/api/` を Durable Object へ渡す。
-- `src/auth.ts`: Google ログインとセッション、API トークンの確認。Durable Object の中で動く。
-- `src/store.ts`: Durable Object。全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）。書き込みは同期の SQL だけで行うので、順に処理される。
+- `src/worker.ts`: 入口。`/api/` を、名簿 `main` で権限を確かめてから領域の Durable Object へ渡す。
+- `src/auth.ts`: Google ログインとセッション、API トークンの確認。名簿 `main` の中で動く。
+- `src/directory.ts`: 名簿の表。アカウント・領域・共有と、領域を分ける前のマップの移し替えに使う行。
+- `src/store.ts`: Durable Object。名簿 `main`（`GET /api/spaces`、`GET/POST/DELETE /api/shares`）と、領域 `space:<領域ID>` の2つの役で使う。領域は全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）。書き込みは同期の SQL だけで行うので、順に処理される。
 - `lib/map.ts` と `lib/ops.ts`: 名前・ID・経路でノードを指して追加・改名・移動・削除・折りたたみ、Markdown の箇条書きの取り込みと書き出し。Durable Object と CLI が共有する。
 - `cli.ts`: API を呼ぶ CLI。
 
