@@ -1,8 +1,9 @@
 // ログイン。Knowledge Box と同じ形で、ブラウザは Google の OpenID Connect（PKCE・state・nonce）でログインし、
-// 署名を確かめた ID トークンのメールアドレスが ALLOWED_EMAILS にあればセッションを作る。セッションの cookie は
-// 乱数で、Durable Object の SQLite にはそのハッシュだけを置く。CLI とエージェントは Authorization: Bearer に
-// API_TOKEN（Worker の secret）を付ける。
+// 署名を確かめた ID トークンのメールアドレスが ALLOWED_EMAILS にあればセッションを作る。セッションは Google の sub に
+// 結び付けたアカウント（src/directory.ts）を指す。cookie は乱数で、Durable Object の SQLite にはそのハッシュだけを置く。
+// CLI とエージェントは Authorization: Bearer に API_TOKEN（Worker の secret）を付け、OWNER_EMAIL の人として動く。
 // 手元（localhost）では、GOOGLE_CLIENT_ID が無ければ認証なしで通す。
+import type { Directory } from './directory.ts';
 const GOOGLE_AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const GOOGLE_JWKS_ENDPOINT = 'https://www.googleapis.com/oauth2/v3/certs';
@@ -11,7 +12,7 @@ const SESSION_COOKIE = 'mindmap_session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
-export type Who = { email: string; via: 'session' | 'token' | 'local' };
+export type Who = { accountId: string; email: string; via: 'session' | 'token' | 'local' };
 
 function clean(v: unknown): string { return typeof v === 'string' ? v.trim() : ''; }
 
@@ -40,8 +41,15 @@ function cookie(request: Request, value: string, maxAge: number): string {
   const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
   return `${SESSION_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`;
 }
-function allowedEmails(env: Env): Set<string> {
+export function allowedEmails(env: Env): Set<string> {
   return new Set(clean(env.ALLOWED_EMAILS).split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+}
+/** API トークンが動く人で、既存マップの移し先。OWNER_EMAIL が無く、許可が1人だけならその人。決まらなければ空。 */
+export function ownerEmail(env: Env): string {
+  const set = clean(env.OWNER_EMAIL).toLowerCase();
+  if (set) return set;
+  const allowed = [...allowedEmails(env)];
+  return allowed.length === 1 ? allowed[0] : '';
 }
 function googleConfigured(env: Env): boolean { return !!(clean(env.GOOGLE_CLIENT_ID) && clean(env.GOOGLE_CLIENT_SECRET)); }
 function redirectUri(request: Request): string { return new URL('/api/auth/google/callback', request.url).toString(); }
@@ -62,27 +70,32 @@ export function sameOrigin(request: Request): boolean {
 export class Auth {
   sql: SqlStorage;
   env: Env;
+  dir: Directory;
 
-  constructor(sql: SqlStorage, env: Env) {
-    this.sql = sql; this.env = env;
-    sql.exec('CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, email TEXT NOT NULL, expires_at INTEGER NOT NULL)');
+  constructor(sql: SqlStorage, env: Env, dir: Directory) {
+    this.sql = sql; this.env = env; this.dir = dir;
+    // メールアドレスを持っていた頃のセッション表は使わない（一度ログインし直してもらう）
+    sql.exec('DROP TABLE IF EXISTS sessions');
+    sql.exec('CREATE TABLE IF NOT EXISTS account_sessions (hash TEXT PRIMARY KEY, account_id TEXT NOT NULL, expires_at INTEGER NOT NULL)');
     sql.exec(`CREATE TABLE IF NOT EXISTS oauth_states (hash TEXT PRIMARY KEY, code_verifier TEXT NOT NULL, nonce TEXT NOT NULL,
       expires_at INTEGER NOT NULL)`);
   }
 
   /** リクエストの主。認証できなければ null。 */
   async who(request: Request): Promise<Who | null> {
-    if (!authRequired(request, this.env)) return { email: 'local', via: 'local' };
+    if (!authRequired(request, this.env)) return { accountId: 'local', email: 'local', via: 'local' };
     const bearer = (request.headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/)?.[1];
     if (bearer) {
-      const expected = clean(this.env.API_TOKEN);
-      return expected && await sha256(bearer) === await sha256(expected) ? { email: 'api-token', via: 'token' } : null;
+      const expected = clean(this.env.API_TOKEN), owner = ownerEmail(this.env);
+      if (!expected || !owner || await sha256(bearer) !== await sha256(expected)) return null;
+      return { accountId: this.dir.ensureAccountByEmail(owner).id, email: owner, via: 'token' };
     }
     const token = readCookie(request, SESSION_COOKIE);
     if (!token) return null;
-    const row = this.sql.exec<{ email: string }>('SELECT email FROM sessions WHERE hash = ? AND expires_at > ?', await sha256(token), Date.now()).toArray()[0];
+    const row = this.sql.exec<{ account_id: string; email: string | null }>(`SELECT s.account_id, a.email FROM account_sessions s
+      JOIN accounts a ON a.id = s.account_id WHERE s.hash = ? AND s.expires_at > ?`, await sha256(token), Date.now()).toArray()[0];
     // 許可を外したアドレスのセッションは、残っていても通さない
-    return row && allowedEmails(this.env).has(row.email) ? { email: row.email, via: 'session' } : null;
+    return row && row.email && allowedEmails(this.env).has(row.email) ? { accountId: row.account_id, email: row.email, via: 'session' } : null;
   }
 
   /** /api/auth/ の下を受ける。該当しなければ null。 */
@@ -91,7 +104,7 @@ export class Auth {
     switch (url.pathname) {
       case '/api/auth/me': {
         const who = await this.who(request);
-        return Response.json({ authenticated: !!who, email: who?.email ?? null, google: googleConfigured(this.env) },
+        return Response.json({ authenticated: !!who, email: who?.email ?? null, accountId: who?.accountId ?? null, google: googleConfigured(this.env) },
           { headers: { 'Cache-Control': 'no-store' } });
       }
       case '/api/auth/google/start': return this.start(request);
@@ -99,7 +112,7 @@ export class Auth {
       case '/api/auth/logout': {
         if (request.method !== 'POST' || !sameOrigin(request)) return Response.json({ error: 'POST で同じサイトから送ってください' }, { status: 403 });
         const token = readCookie(request, SESSION_COOKIE);
-        if (token) this.sql.exec('DELETE FROM sessions WHERE hash = ?', await sha256(token));
+        if (token) this.sql.exec('DELETE FROM account_sessions WHERE hash = ?', await sha256(token));
         return Response.json({ ok: true }, { headers: { 'Set-Cookie': cookie(request, '', 0) } });
       }
     }
@@ -160,27 +173,29 @@ export class Auth {
     } catch {
       return back('google_unavailable');
     }
-    let email: string;
+    let identity: { sub: string; email: string };
     try {
-      email = await verifyGoogleIdToken(idToken, clean(this.env.GOOGLE_CLIENT_ID), saved.nonce);
+      identity = await verifyGoogleIdToken(idToken, clean(this.env.GOOGLE_CLIENT_ID), saved.nonce);
     } catch {
       return back('google_identity_invalid');
     }
-    if (!allowedEmails(this.env).has(email)) {
-      console.log(`ログインを断った: ${email} は ALLOWED_EMAILS にない`);
+    if (!allowedEmails(this.env).has(identity.email)) {
+      console.log(`ログインを断った: ${identity.email} は ALLOWED_EMAILS にない`);
       return back('not_allowed');
     }
+    const account = this.dir.login(identity.sub, identity.email);
 
     const token = randomToken(32);
     const now = Date.now();
-    this.sql.exec('DELETE FROM sessions WHERE expires_at <= ?', now);
-    this.sql.exec('INSERT INTO sessions (hash, email, expires_at) VALUES (?, ?, ?)', await sha256(token), email, now + SESSION_MAX_AGE_SECONDS * 1000);
+    this.sql.exec('DELETE FROM account_sessions WHERE expires_at <= ?', now);
+    this.sql.exec('INSERT INTO account_sessions (hash, account_id, expires_at) VALUES (?, ?, ?)', await sha256(token), account.id,
+      now + SESSION_MAX_AGE_SECONDS * 1000);
     return back('', cookie(request, token, SESSION_MAX_AGE_SECONDS));
   }
 }
 
-/** Google の ID トークンの署名と中身を確かめ、確認済みのメールアドレスを返す。 */
-async function verifyGoogleIdToken(idToken: unknown, clientId: string, nonce: string): Promise<string> {
+/** Google の ID トークンの署名と中身を確かめ、利用者番号（sub）と確認済みのメールアドレスを返す。 */
+async function verifyGoogleIdToken(idToken: unknown, clientId: string, nonce: string): Promise<{ sub: string; email: string }> {
   if (typeof idToken !== 'string') throw new Error('missing_id_token');
   const [h, p, s] = idToken.split('.');
   if (!h || !p || !s) throw new Error('invalid_jwt');
@@ -197,6 +212,6 @@ async function verifyGoogleIdToken(idToken: unknown, clientId: string, nonce: st
   const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
   if (!(payload.iss === 'https://accounts.google.com' || payload.iss === 'accounts.google.com')
     || !auds.includes(clientId) || Number(payload.exp) <= Date.now() / 1000
-    || payload.nonce !== nonce || payload.email_verified !== true || !clean(payload.email)) throw new Error('invalid_claims');
-  return clean(payload.email).toLowerCase();
+    || payload.nonce !== nonce || payload.email_verified !== true || !clean(payload.email) || !clean(payload.sub)) throw new Error('invalid_claims');
+  return { sub: clean(payload.sub), email: clean(payload.email).toLowerCase() };
 }

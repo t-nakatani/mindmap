@@ -19,6 +19,21 @@ MINDMAP_TOKEN=<API トークン>
 
 `ログインしていません` と出たら、`MINDMAP_TOKEN` を確かめてください。トークンの値は出力に書かないでください。
 
+## 領域と共有
+
+マップはログインする Google アカウントごとの「領域」に入っています。領域は `s_` で始まる ID で区別します。
+API トークンは `OWNER_EMAIL` の人として動き、その人の領域を読み書きします。手元で認証なしのときは、領域は `local` の1つだけです。
+
+```sh
+node cli.ts spaces # 開ける領域。* が自分の領域、ほかは共有されたもの（閲覧のみ）
+node cli.ts show --space s_xxxxxxxxxxxx # 共有された領域を読む（maps・show・export だけ）
+node cli.ts share # 自分の領域を共有している相手
+node cli.ts share add someone@example.com # 読み取り専用で共有する（ALLOWED_EMAILS にある人だけ）
+node cli.ts share remove someone@example.com
+```
+
+共有された領域には書き込めません。共有の追加と解除は、頼まれたときだけ行ってください。
+
 ## マップは複数ある
 
 マップは名前で区別します。画面と CLI は「今選んでいるマップ」を対象にします。
@@ -116,10 +131,11 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 
 ## 中身（変更するとき）
 
-- `public/index.html`: ページ。1ファイルで依存なし。読み書きは `/api/map`（版番号つき）、変更は `/api/ws`（WebSocket）で受ける。
-- `src/worker.ts`: 入口。ページは静的アセット（`public/`）が配り、`/api/` は Durable Object へ渡す。
-- `src/auth.ts`: Google ログイン（ブラウザ）と API トークン（CLI）の確認。Durable Object の中で動く。
-- `src/store.ts`: Durable Object `MindmapStore`（1つだけ）。全マップと「今選んでいるマップ」を SQLite に持ち、API と WebSocket の配信を受け持つ。
+- `public/index.html`: ページ。1ファイルで依存なし。読み書きは `/api/map`（版番号つき）、変更は `/api/ws`（WebSocket）で受ける。共有された領域は `?space=` を付けて開き、閲覧のみになる。
+- `src/worker.ts`: 入口。ページは静的アセット（`public/`）が配る。`/api/` は、名簿 `main` で権限を確かめてから、領域の Durable Object へ渡す。
+- `src/auth.ts`: Google ログイン（ブラウザ）と API トークン（CLI）の確認。セッションはアカウント ID を持つ。名簿 `main` の中で動く。
+- `src/directory.ts`: 名簿。アカウント（Google の sub に結び付けた `a_…`）、領域（`s_…`、今は1人1つ）、共有（領域 → 閲覧者）。
+- `src/store.ts`: Durable Object `MindmapStore`。名簿 `main` と、領域ごとの `space:<領域ID>` の2つの役で使う。領域は全マップと「今選んでいるマップ」を SQLite に持ち、API と WebSocket の配信を受け持つ。手元で認証なしのときは `main` が領域 `local` を兼ねる。
 - `lib/map.ts`: ノードの解決、追加・移動・削除、箇条書きの読み書き。Durable Object と CLI が共有する。
 - `lib/ops.ts`: CLI の操作（add・move など）を、名前の解決ごとマップに当てる。Durable Object が呼ぶ。
 - `cli.ts`: コマンドの入口。`node cli.ts` でそのまま動く（Node 23.6 以上）。

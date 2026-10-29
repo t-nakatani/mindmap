@@ -90,6 +90,19 @@
   #login-error { color: #e4572e; font-size: 13px; min-height: 1em; }
   #account { display: none; }
   #account a { color: var(--muted); cursor: pointer; text-decoration: underline; }
+  #space-select, #btn-share, #space-sep, #readonly-badge { display: none; }
+  #readonly-badge { color: var(--muted); border: 1px dashed var(--hud-border); border-radius: 6px; padding: 3px 8px; }
+  body.readonly .edit-only { display: none !important; }
+  #share-panel { left: 12px; bottom: 64px; display: none; flex-direction: column; align-items: stretch; gap: 8px; width: min(360px, calc(100% - 24px)); }
+  #share-panel.show { display: flex; }
+  #share-panel h2 { margin: 0; font-size: 13px; font-weight: 600; }
+  #share-panel p { margin: 0; color: var(--muted); font-size: 12px; }
+  #share-list { display: flex; flex-direction: column; gap: 4px; }
+  #share-list div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #share-form { display: flex; gap: 6px; }
+  #share-form input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 6px;
+    border: 1px solid var(--hud-border); background: var(--node-bg); color: var(--fg); }
+  #share-error { color: #e4572e; font-size: 12px; min-height: 1em; }
 </style>
 </head>
 <body>
@@ -103,28 +116,44 @@
 <div id="editor" contenteditable="true" spellcheck="false"></div>
 
 <div id="toolbar" class="hud">
+  <select id="space-select" title="領域を切り替える"></select>
+  <button id="btn-share">共有</button>
+  <span id="readonly-badge">閲覧のみ</span>
+  <span id="space-sep" class="sep"></span>
   <select id="map-select" title="マップを切り替える"></select>
-  <button id="btn-add-map">マップを追加</button>
-  <span class="sep"></span>
-  <button id="btn-new">新規</button>
+  <button id="btn-add-map" class="edit-only">マップを追加</button>
+  <span class="sep edit-only"></span>
+  <button id="btn-new" class="edit-only">新規</button>
   <span class="sep"></span>
   <button id="btn-zoom-out">−</button>
   <span id="zoom">100%</span>
   <button id="btn-zoom-in">＋</button>
   <button id="btn-fit">全体を表示</button>
-  <span class="sep"></span>
-  <span id="layout-group" style="display: contents">
+  <span class="sep edit-only"></span>
+  <span id="layout-group" class="edit-only" style="display: contents">
     <span class="group-label">配置</span>
     <button data-layout="both">両側</button>
     <button data-layout="right">右</button>
     <button data-layout="left">左</button>
   </span>
-  <span class="sep"></span>
-  <span id="side-group" style="display: contents">
+  <span class="sep edit-only"></span>
+  <span id="side-group" class="edit-only" style="display: contents">
     <span class="group-label">枝</span>
     <button data-side="left">◀ 左へ</button>
     <button data-side="right">右へ ▶</button>
   </span>
+</div>
+
+<div id="share-panel" class="hud">
+  <h2>自分の領域を共有する</h2>
+  <p>指定したアカウントは、この領域のマップを読み取り専用で開けます。</p>
+  <div id="share-list"></div>
+  <form id="share-form">
+    <input id="share-email" type="email" placeholder="メールアドレス" autocomplete="off">
+    <button type="submit">追加</button>
+  </form>
+  <div id="share-error"></div>
+  <button id="btn-share-close" type="button">閉じる</button>
 </div>
 
 <div id="login">
@@ -231,10 +260,22 @@
   }
   // 保存先はサーバーの /api/map?name=<マップ名>。読み込んだときの版番号 version を添えて丸ごと置き換え、
   // 別の場所で先に書かれていたら（409）サーバーの最新を取り込む。届かないときは localStorage だけに残す。
+  // 開いている領域は spaceId（自分の領域なら null）。共有された領域は閲覧のみ（readOnly）で、何も保存しない。
   let lastSaved = '', saveTimer = null, inflight = null, mapName = null, version = 0;
+  let spaceId = null, readOnly = false;
+  const SPACE_KEY = 'mindmap-space';
   const mapSelect = document.getElementById('map-select');
-  function mapQuery() { return mapName ? '?name=' + encodeURIComponent(mapName) : ''; }
+  const spaceSelect = document.getElementById('space-select');
+  function query(params = {}) {
+    const p = new URLSearchParams();
+    if (params.name) p.set('name', params.name);
+    if (spaceId) p.set('space', spaceId);
+    const s = p.toString();
+    return s ? '?' + s : '';
+  }
+  function mapQuery() { return query({ name: mapName }); }
   function save() {
+    if (readOnly) return;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(serialize())); } catch (e) { /* 保存できない環境では無視 */ }
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flush, 150);
@@ -275,13 +316,13 @@
     mapSelect.value = mapName || list.current || '';
   }
   async function refreshMaps() {
-    try { const r = await fetch('/api/maps'); if (r.ok) { const list = await r.json(); renderMaps(list); return list; } } catch (e) { /* サーバーなし */ }
+    try { const r = await fetch('/api/maps' + query()); if (r.ok) { const list = await r.json(); renderMaps(list); return list; } } catch (e) { /* サーバーなし */ }
     return null;
   }
   // 別のマップに切り替える。取り消し履歴はマップごとなので捨てる。
   async function switchTo(name) {
     let data = null;
-    try { const r = await fetch('/api/map?name=' + encodeURIComponent(name)); if (r.ok) data = await r.json(); } catch (e) { /* サーバーなし */ }
+    try { const r = await fetch('/api/map' + query({ name })); if (r.ok) data = await r.json(); } catch (e) { /* サーバーなし */ }
     if (!data || !Array.isArray(data.nodes)) return;
     if (editingId) { editor.style.display = 'none'; editingId = null; }
     clearTimeout(saveTimer); saveTimer = null;
@@ -295,14 +336,16 @@
   mapSelect.addEventListener('change', () => {
     const name = mapSelect.value; mapSelect.blur();
     if (!name || name === mapName) return;
-    fetch('/api/current', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => {});
+    // 閲覧のみの領域では、持ち主の選択は動かさずに自分の画面だけ切り替える
+    if (!readOnly) fetch('/api/current' + query(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => {});
     switchTo(name);
   });
   document.getElementById('btn-add-map').addEventListener('click', async () => {
+    if (readOnly) return;
     const name = (prompt('新しいマップの名前') || '').trim();
     if (!name) return;
     try {
-      const r = await fetch('/api/maps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, title: name, select: true }) });
+      const r = await fetch('/api/maps' + query(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, title: name, select: true }) });
       const body = await r.json();
       if (!r.ok) { alert(body.error || '作れませんでした'); return; }
       await refreshMaps(); await switchTo(body.name);
@@ -310,20 +353,93 @@
   });
   async function loadInitial() {
     try {
-      const r = await fetch('/api/map');
+      const r = await fetch('/api/map' + query());
       if (r.status === 401) return { login: true };
       if (r.ok) return await r.json();
     } catch (e) { /* サーバーなし */ }
+    if (readOnly) return null;
     try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch (e) { /* 壊れた保存は無視 */ }
     return null;
   }
+  // 開ける領域（自分のものと、共有されたもの）。前に開いていた領域をタブごとに覚えておき、まだ開けるならそれを開く。
+  async function loadSpaces() {
+    let info;
+    try {
+      const r = await fetch('/api/spaces');
+      if (!r.ok) return;
+      info = await r.json();
+    } catch (e) { return; /* サーバーなし */ }
+    let saved = null;
+    try { saved = sessionStorage.getItem(SPACE_KEY); } catch (e) { /* 無視 */ }
+    const pick = info.spaces.find(s => s.id === saved && s.id !== info.own);
+    spaceId = pick ? pick.id : null;
+    readOnly = !!pick && pick.role !== 'owner';
+    document.body.classList.toggle('readonly', readOnly);
+    spaceSelect.innerHTML = '';
+    for (const s of info.spaces) {
+      const o = document.createElement('option');
+      o.value = s.id === info.own ? '' : s.id;
+      o.textContent = s.id === info.own ? '自分の領域' : `${s.owner}（閲覧のみ）`;
+      spaceSelect.appendChild(o);
+    }
+    spaceSelect.value = spaceId || '';
+    const shared = info.spaces.length > 1, canShare = info.own !== 'local' && !readOnly;
+    spaceSelect.style.display = shared ? 'inline-block' : '';
+    document.getElementById('btn-share').style.display = canShare ? 'inline-block' : '';
+    const badge = document.getElementById('readonly-badge');
+    badge.style.display = readOnly ? 'inline-block' : '';
+    if (pick) badge.title = `${pick.owner} の領域を閲覧しています`;
+    document.getElementById('space-sep').style.display = shared || canShare || readOnly ? 'inline-block' : '';
+  }
+  // 領域を変えるときは、接続と取り消し履歴ごと開き直す
+  function openSpace(id) {
+    try { if (id) sessionStorage.setItem(SPACE_KEY, id); else sessionStorage.removeItem(SPACE_KEY); } catch (e) { /* 無視 */ }
+    location.replace('/');
+  }
+  spaceSelect.addEventListener('change', () => { spaceSelect.blur(); if ((spaceSelect.value || null) !== spaceId) openSpace(spaceSelect.value); });
+
+  // 共有の設定。自分の領域を、指定したアカウントに読み取り専用で見せる。
+  const sharePanel = document.getElementById('share-panel');
+  const shareError = document.getElementById('share-error');
+  function renderShares(list) {
+    const box = document.getElementById('share-list');
+    box.innerHTML = '';
+    if (!list.length) { const p = document.createElement('p'); p.textContent = 'まだ誰にも共有していません'; box.appendChild(p); }
+    for (const s of list) {
+      const row = document.createElement('div');
+      const label = document.createElement('span'); label.textContent = s.email;
+      const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = '外す';
+      btn.addEventListener('click', () => changeShare('DELETE', s.email));
+      row.append(label, btn); box.appendChild(row);
+    }
+  }
+  async function changeShare(method, email) {
+    shareError.textContent = '';
+    try {
+      const r = await fetch('/api/shares', { method, headers: { 'Content-Type': 'application/json' }, body: method === 'GET' ? undefined : JSON.stringify({ email }) });
+      const body = await r.json();
+      if (!r.ok) { shareError.textContent = body.error || '共有を変えられませんでした'; return false; }
+      renderShares(body.shares);
+      return true;
+    } catch (e) { shareError.textContent = 'サーバーに届きませんでした'; return false; }
+  }
+  document.getElementById('btn-share').addEventListener('click', () => {
+    if (sharePanel.classList.toggle('show')) { changeShare('GET'); document.getElementById('share-email').focus(); }
+  });
+  document.getElementById('btn-share-close').addEventListener('click', () => sharePanel.classList.remove('show'));
+  document.getElementById('share-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const input = document.getElementById('share-email');
+    const email = input.value.trim();
+    if (email && await changeShare('POST', email)) input.value = '';
+  });
   // CLI など外部からの変更を WebSocket で受け取り、取り消せる形で取り込む。切れたらつなぎ直し、
   // つながるたびに、切れていた間の変更（版が進んだマップと、選んでいるマップ）を取り込む。
   function connectEvents() {
     let retry = 0, pingTimer = null;
     const open = () => {
       let ws;
-      try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws'); } catch (e) { return; }
+      try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/ws' + query()); } catch (e) { return; }
       ws.onopen = () => {
         retry = 0;
         resync();
@@ -333,11 +449,18 @@
       ws.onmessage = e => {
         let msg; try { msg = JSON.parse(e.data); } catch (err) { return; } // pong
         if (msg.type === 'map') onRemoteMap(msg);
-        else if (msg.type === 'current') { if (msg.name && msg.name !== mapName) switchTo(msg.name); }
+        else if (msg.type === 'current') { if (!readOnly && msg.name && msg.name !== mapName) switchTo(msg.name); }
         else if (msg.type === 'maps') renderMaps(msg);
+        else if (msg.type === 'revoked') openSpace(null);
       };
-      ws.onclose = async () => {
+      ws.onclose = async e => {
         clearInterval(pingTimer);
+        // 共有を外された。自分の領域に戻る
+        if (e.code === 4003) { openSpace(null); return; }
+        // 開いている領域にもう入れなければ（共有を外された間に切れていた）、自分の領域に戻る
+        if (spaceId) {
+          try { const r = await fetch('/api/maps' + query()); if (r.status === 404) { openSpace(null); return; } } catch (e) { /* サーバーなし */ }
+        }
         // セッションが切れていたら、つなぎ直さずにログイン画面を出す
         try { const r = await fetch('/api/auth/me'); if (r.ok && !(await r.json()).authenticated) { showLogin(); return; } } catch (e) { /* サーバーなし */ }
         setTimeout(open, Math.min(30000, 1000 * 2 ** retry++));
@@ -354,7 +477,7 @@
   }
   async function resync() {
     const list = await refreshMaps();
-    if (list && list.current && list.current !== mapName) { switchTo(list.current); return; }
+    if (!readOnly && list && list.current && list.current !== mapName) { switchTo(list.current); return; }
     if (!mapName) return;
     try {
       const r = await fetch('/api/map' + mapQuery());
@@ -455,7 +578,7 @@
   function commit() { save(); layout(); syncDom(); requestDraw(); }
 
   function addChild(parentId, text = '') {
-    const p = nodes.get(parentId); if (!p) return;
+    const p = nodes.get(parentId); if (!p || readOnly) return;
     pushUndo();
     p.collapsed = false;
     const n = makeNode(text, parentId);
@@ -572,17 +695,17 @@
     }
     return trees;
   }
-  // 選択中のノードを写す。切り取りなら消す（最後の中心ノードは消さずに写すだけ）。写した文字を返す。
+  // 選択中のノードを写す。切り取りなら消す（最後の中心ノードと、閲覧のみの領域では消さずに写すだけ）。写した文字を返す。
   function copySelected(cut) {
     const n = nodes.get(selectedId); if (!n) return null;
     const trees = [snapshot(n)];
     clip = { text: toOutline(trees), trees };
-    if (cut) deleteNode(n.id);
+    if (cut && !readOnly) deleteNode(n.id);
     return clip.text;
   }
   // 選択中のノードの子として足す。選択がなければ、画面の真ん中に新しいマップとして置く。
   function pasteTrees(trees) {
-    if (!trees.length) return;
+    if (!trees.length || readOnly) return;
     pushUndo();
     const build = (it, parentId) => {
       const n = makeNode(it.text, parentId);
@@ -652,7 +775,7 @@
   });
   document.addEventListener('paste', e => {
     pendingClip = null;
-    if (textClipboard(e)) return;
+    if (readOnly || textClipboard(e)) return;
     const text = e.clipboardData.getData('text/plain').replace(/\r\n/g, '\n');
     const trees = clip && text.trim() === clip.text.trim() ? clip.trees : parseOutline(text);
     if (!trees.length) return;
@@ -940,7 +1063,8 @@
     if (e.button !== 0) return;
     const g = e.target.closest && e.target.closest('.node');
     const w = toWorld(e.clientX, e.clientY);
-    if (g && e.target.closest('.toggle')) { finishEdit(); toggleCollapse(g.dataset.id); return; }
+    if (g && e.target.closest('.toggle')) { if (!readOnly) { finishEdit(); toggleCollapse(g.dataset.id); } return; }
+    if (g && readOnly) { selectedId = g.dataset.id; requestDraw(); return; }
     if (g) {
       const n = nodes.get(g.dataset.id);
       if (editingId && editingId !== n.id) finishEdit();
@@ -1007,7 +1131,7 @@
     // pointerdown で svg にポインタを捕捉しているので、e.target は svg になる。座標から要素を引き直す
     const hit = document.elementFromPoint(e.clientX, e.clientY) || e.target;
     const g = hit.closest && hit.closest('.node');
-    if (g && hit.closest('.toggle')) return;
+    if (readOnly || (g && hit.closest('.toggle'))) return;
     if (g) { e.preventDefault(); startEdit(g.dataset.id); }
     else if (!g) { e.preventDefault(); const w = toWorld(e.clientX, e.clientY); addRoot(w.x, w.y); }
   });
@@ -1038,7 +1162,7 @@
     requestDraw();
   }
   window.addEventListener('keydown', e => {
-    if (e.target === mapSelect || (e.target.closest && e.target.closest('#help'))) return;
+    if (e.target === mapSelect || e.target === spaceSelect || (e.target.closest && e.target.closest('#help, #share-panel'))) return;
     const meta = e.metaKey || e.ctrlKey;
     if (editingId) {
       // 日本語入力の変換中や確定の Enter・Esc・Tab は IME に任せる。Safari は確定の Enter で isComposing が false になるので keyCode も見る
@@ -1048,10 +1172,18 @@
       else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
       return;
     }
-    if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (!readOnly) e.shiftKey ? redo() : undo(); return; }
     if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1.2); return; }
     if (meta && e.key === '-') { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1 / 1.2); return; }
     if (meta && e.key === '0') { e.preventDefault(); fitView(); return; }
+    // 閲覧のみでは、移動と表示とコピーだけ受ける
+    if (readOnly) {
+      if (e.key.startsWith('Arrow') && !meta && selectedId) { e.preventDefault(); navigate(e.key); }
+      else if (meta && !e.altKey && ['c', 'x'].includes(e.key.toLowerCase())) onClipKey(e.key.toLowerCase());
+      else if (e.key === 'Escape') { selectedId = null; requestDraw(); }
+      else if (e.key === 'Tab' && !selectedId) { e.preventDefault(); selectedId = roots()[0].id; requestDraw(); }
+      return;
+    }
     if (meta && e.key === '.') { e.preventDefault(); if (selectedId) toggleCollapse(selectedId); return; }
     if (meta && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); if (selectedId) setSide(selectedId, e.key === 'ArrowLeft' ? 'left' : 'right'); return;
@@ -1097,7 +1229,7 @@
   });
 
   // ---------- 起動 ----------
-  loadInitial().then(data => {
+  loadSpaces().then(loadInitial).then(data => {
     if (data && data.login) { showLogin(); return; }
     if (new URLSearchParams(location.search).has('auth')) history.replaceState(null, '', '/');
     showAccount();

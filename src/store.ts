@@ -1,4 +1,15 @@
-// 全マップと「今選んでいるマップ」を持つ Durable Object。インスタンスは1つ（名前 main）だけ使う。
+// マップを持つ Durable Object。同じクラスを2つの役で使う。
+// - 名簿 `main`: ログイン（src/auth.ts）と、アカウント・領域・共有（src/directory.ts）。手元で認証なしのときは、領域 `local` も兼ねる。
+// - 領域 `space:<領域ID>`: 1人分の全マップと「今選んでいるマップ」。
+// Worker が名簿に権限を尋ね（access）、領域へ渡すときに X-Mindmap-Access に結果を付ける。領域はこのヘッダだけを信じる。
+//
+// 名簿が受けるもの（ログインか API トークンが要る。/api/auth/ は除く）:
+// - /api/auth/...              Google ログイン
+// - GET    /api/spaces         開ける領域の一覧（自分のものが先頭）
+// - GET    /api/shares         自分の領域を共有している相手
+// - POST   /api/shares         共有する     {email}
+// - DELETE /api/shares         共有をやめる {email}
+// 領域が受けるもの（?space=<領域ID> で領域を選ぶ。省くと自分の領域。閲覧者は GET だけ）:
 // - GET  /api/maps            マップの一覧と、今選んでいる名前
 // - POST /api/maps            新しいマップを作る       {name, title, select?, replace?}
 // - PUT  /api/current         選ぶマップを変える       {name}
@@ -7,14 +18,24 @@
 // - POST /api/op[?name=]      名前・ID・経路で指した操作を当てる {op, args}
 // - POST /api/import          ファイル時代のマップをまとめて入れる {maps: {名前: マップ}, current?, replace?}
 // - GET  /api/ws              変更を WebSocket で流す（map / current / maps）
-// - /api/auth/...              Google ログイン（src/auth.ts）。ほかはすべてログインか API トークンが要る
 // 書き込みは同期の SQL だけで行い、途中で await しない。だから読んでから書くまでに別の書き込みが割り込まない。
 import { DurableObject } from 'cloudflare:workers';
 import { cleanName, normalize, newMap, isMap, roots } from '../lib/map.ts';
 import type { MindMap } from '../lib/map.ts';
 import { applyOp, OPS } from '../lib/ops.ts';
-import { Auth, sameOrigin } from './auth.ts';
+import { Auth, allowedEmails, ownerEmail, sameOrigin } from './auth.ts';
+import { Directory, LOCAL_SPACE, cleanEmail } from './directory.ts';
+import type { Role, SpaceInfo } from './directory.ts';
 import type { OpArgs } from '../lib/ops.ts';
+
+export const ACCESS_HEADER = 'X-Mindmap-Access';
+export interface Access { spaceId: string; accountId: string; role: Role }
+export type AccessResult = (Access & { via: 'session' | 'token' | 'local' }) | { status: number; error: string };
+/** 名前の Durable Object。`main` か、領域 ID のもの（手元の local は main）。設定から推論される型には RPC が載らないので、ここで付ける。 */
+export function storeStub(env: Env, name: { space: string } | 'main'): DurableObjectStub<MindmapStore> {
+  const objectName = name === 'main' || name.space === LOCAL_SPACE ? 'main' : `space:${name.space}`;
+  return env.STORE.get(env.STORE.idFromName(objectName)) as unknown as DurableObjectStub<MindmapStore>;
+}
 
 export interface MapInfo { name: string; title: string; roots: number; version: number; updatedAt: string }
 type MapRow = { name: string; data: string; version: number; title: string; roots: number; updated_at: string };
@@ -34,7 +55,8 @@ function json(status: number, body: unknown): Response {
 
 export class MindmapStore extends DurableObject<Env> {
   sql: SqlStorage;
-  auth: Auth;
+  #dir: Directory | null = null;
+  #auth: Auth | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -43,9 +65,109 @@ export class MindmapStore extends DurableObject<Env> {
       name TEXT PRIMARY KEY, data TEXT NOT NULL, version INTEGER NOT NULL,
       title TEXT NOT NULL, roots INTEGER NOT NULL, updated_at TEXT NOT NULL)`);
     this.sql.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
-    this.auth = new Auth(this.sql, env);
     // ブラウザが接続を保つために送る ping には、DO を起こさずに pong を返す
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+  }
+  // 名簿の表は `main` でだけ作る
+  get dir(): Directory { return this.#dir ??= new Directory(this.sql); }
+  get auth(): Auth { return this.#auth ??= new Auth(this.sql, this.env, this.dir); }
+  space(spaceId: string) { return storeStub(this.env, { space: spaceId }); }
+
+  // ---------- 名簿（main） ----------
+
+  /** Worker から呼ぶ。リクエストの主と、?space= の領域への権限を確かめる。 */
+  async access(url: string, cookie: string, authorization: string, spaceParam: string): Promise<AccessResult> {
+    const headers = new Headers();
+    if (cookie) headers.set('Cookie', cookie);
+    if (authorization) headers.set('Authorization', authorization);
+    const who = await this.auth.who(new Request(url, { headers }));
+    if (!who) return { status: 401, error: 'ログインしていません。ブラウザは Google でログインし、CLI は MINDMAP_TOKEN を設定してください' };
+    if (who.via === 'local') {
+      if (spaceParam && spaceParam !== LOCAL_SPACE) return { status: 404, error: `領域「${spaceParam}」はありません（手元の認証なしでは local だけ）` };
+      return { spaceId: LOCAL_SPACE, accountId: who.accountId, role: 'owner', via: who.via };
+    }
+    const own = await this.ownSpace(who.accountId, who.email);
+    if ('error' in own) return own;
+    const spaceId = spaceParam || own.spaceId;
+    const role = this.dir.role(spaceId, who.accountId);
+    if (!role) return { status: 404, error: `領域「${spaceId}」がないか、共有されていません。spaces で一覧を見てください` };
+    await this.dir.seeding.get(spaceId);
+    return { spaceId, accountId: who.accountId, role, via: who.via };
+  }
+  /** 自分の領域。無ければ作る。OWNER_EMAIL の人なら、領域を分ける前のマップをそこへ写す。 */
+  async ownSpace(accountId: string, email: string): Promise<{ spaceId: string } | { status: number; error: string }> {
+    const spaceId = this.dir.ensureOwnSpace(accountId);
+    if (this.dir.legacyPending()) {
+      const owner = ownerEmail(this.env);
+      if (!owner) return { status: 503, error: '既存のマップの持ち主が決まっていません。Worker の secret OWNER_EMAIL を設定してください' };
+      if (owner === email && !this.dir.seeding.has(spaceId)) {
+        const rows = this.dir.legacyRows(), current = this.dir.legacyCurrent();
+        const job = this.space(spaceId).seed(rows, current)
+          .then(() => this.dir.markLegacyMoved(spaceId))
+          .finally(() => this.dir.seeding.delete(spaceId));
+        this.dir.seeding.set(spaceId, job);
+      }
+    }
+    await this.dir.seeding.get(spaceId);
+    return { spaceId };
+  }
+
+  async directoryRoute(request: Request, url: URL): Promise<Response> {
+    const who = await this.auth.who(request);
+    if (!who) return json(401, { error: 'ログインしていません。ブラウザは Google でログインし、CLI は MINDMAP_TOKEN を設定してください' });
+    if (who.via === 'session' && !sameOrigin(request)) return json(403, { error: '別のサイトからの書き込みは受けません' });
+    if (who.via === 'local') {
+      if (url.pathname === '/api/spaces') {
+        const spaces: SpaceInfo[] = [{ id: LOCAL_SPACE, owner: 'local', role: 'owner' }];
+        return json(200, { accountId: who.accountId, email: who.email, own: LOCAL_SPACE, spaces });
+      }
+      throw new HttpError(400, '手元の認証なしでは共有できません。Google ログインを設定してください');
+    }
+    const own = await this.ownSpace(who.accountId, who.email);
+    if ('error' in own) return json(own.status, { error: own.error });
+    if (url.pathname === '/api/spaces' && request.method === 'GET') {
+      return json(200, { accountId: who.accountId, email: who.email, own: own.spaceId, spaces: this.dir.spaces(who.accountId) });
+    }
+    if (url.pathname === '/api/shares') {
+      if (request.method === 'GET') return json(200, { space: own.spaceId, shares: this.dir.shares(own.spaceId) });
+      const body = await readJson(request);
+      let email: string;
+      try { email = cleanEmail(body.email); } catch (e) { throw new HttpError(400, (e as Error).message); }
+      if (request.method === 'POST') {
+        if (email === who.email) throw new HttpError(400, '自分には共有できません');
+        if (!allowedEmails(this.env).has(email)) throw new HttpError(400, `${email} はログインを許可されていません（ALLOWED_EMAILS に足してください）`);
+        this.dir.share(own.spaceId, this.dir.ensureAccountByEmail(email).id);
+        return json(200, { ok: true, space: own.spaceId, shares: this.dir.shares(own.spaceId) });
+      }
+      if (request.method === 'DELETE') {
+        const account = this.dir.accountByEmail(email);
+        if (!account || !this.dir.unshare(own.spaceId, account.id)) throw new HttpError(404, `${email} には共有していません`);
+        await this.space(own.spaceId).revoke(account.id);
+        return json(200, { ok: true, space: own.spaceId, shares: this.dir.shares(own.spaceId) });
+      }
+    }
+    throw new HttpError(404, 'not found');
+  }
+
+  // ---------- 領域から名簿へ（RPC） ----------
+
+  /** 領域を分ける前のマップを入れる。同じ名前があれば残す。 */
+  async seed(rows: { name: string; data: string; version: number }[], current: string | null) {
+    for (const r of rows) {
+      if (this.row(r.name)) continue;
+      const map = normalize(JSON.parse(r.data));
+      this.write(r.name, map, r.version - 1);
+    }
+    if (current && this.row(current) && !this.sql.exec("SELECT 1 FROM meta WHERE key = 'current'").toArray().length) {
+      this.setMeta('current', current);
+    }
+    this.broadcastMaps();
+  }
+  /** 共有をやめた人の接続を閉じる。閉じる知らせが届かないこともあるので、先に revoked を送る。 */
+  async revoke(accountId: string) {
+    for (const ws of this.ctx.getWebSockets(`account:${accountId}`)) {
+      try { ws.send(JSON.stringify({ type: 'revoked' })); ws.close(4003, 'revoked'); } catch { /* もう閉じている */ }
+    }
   }
 
   // ---------- 読み書き ----------
@@ -127,18 +249,18 @@ export class MindmapStore extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     try {
-      if (url.pathname.startsWith('/api/auth/')) {
-        const res = await this.auth.route(request);
-        if (res) return res;
-      }
-      const who = await this.auth.who(request);
-      if (!who) return json(401, { error: 'ログインしていません。ブラウザは Google でログインし、CLI は MINDMAP_TOKEN を設定してください' });
-      if (who.via === 'session' && !sameOrigin(request)) return json(403, { error: '別のサイトからの書き込みは受けません' });
+      if (url.pathname.startsWith('/api/auth/')) return (await this.auth.route(request)) ?? json(404, { error: 'not found' });
+      if (url.pathname === '/api/spaces' || url.pathname === '/api/shares') return await this.directoryRoute(request, url);
+      const access = readAccess(request);
+      if (!access) return json(403, { error: '領域への権限がありません' });
       if (url.pathname === '/api/ws') {
         if (request.headers.get('Upgrade') !== 'websocket') return json(426, { error: 'WebSocket で接続してください' });
         const pair = new WebSocketPair();
-        this.ctx.acceptWebSocket(pair[1]);
+        this.ctx.acceptWebSocket(pair[1], [`account:${access.accountId}`]);
         return new Response(null, { status: 101, webSocket: pair[0] });
+      }
+      if (access.role !== 'owner' && request.method !== 'GET') {
+        return json(403, { error: 'この領域は閲覧のみです。書き込めるのは持ち主だけです' });
       }
       // 本文は先に読み切る。ここから先は await しない
       const body = request.method === 'GET' ? {} : await readJson(request);
@@ -217,6 +339,15 @@ export class MindmapStore extends DurableObject<Env> {
     }
     throw new HttpError(404, 'not found');
   }
+}
+
+function readAccess(request: Request): Access | null {
+  const raw = request.headers.get(ACCESS_HEADER);
+  if (!raw) return null;
+  try {
+    const a = JSON.parse(raw);
+    return typeof a.spaceId === 'string' && typeof a.accountId === 'string' && (a.role === 'owner' || a.role === 'viewer') ? a : null;
+  } catch { return null; }
 }
 
 async function readJson(request: Request): Promise<Record<string, any>> {

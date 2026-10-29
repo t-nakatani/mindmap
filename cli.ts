@@ -48,8 +48,13 @@ const USAGE = `使い方: node cli.ts <コマンド> [引数] [オプション]
   new <題名>                           今のマップを中心ノード1つだけにして作り直す
   migrate [フォルダ] [--replace]       ファイル時代の <フォルダ>/<マップ名>.json と .current をサーバーへ移す
                                        （既定は data/）。同じ名前のマップは --replace のときだけ上書きする
+  spaces                               開ける領域の一覧。* が自分の領域、ほかは共有されたもの（閲覧のみ）
+  share [list]                         自分の領域を共有している相手
+  share add <メール>                   自分の領域を、そのアカウントに読み取り専用で共有する
+  share remove <メール>                共有をやめる
 
 どのコマンドも --map <マップ名> で対象のマップを変えられる（省くと use で選んだもの）。
+--space <領域ID> で、共有された領域を読める（maps・show・export だけ。省くと自分の領域）。
 中心ノードは複数置ける。それぞれが独立したマップになる。
 --under を省くと、中心ノードが1つのときはその下に入る。複数あるときは --under か --root が必要。
 ノードの指定: ID（n12）、完全一致の名前、または「中心/予算/人件費」のような経路（中心は省ける）。
@@ -58,15 +63,16 @@ const USAGE = `使い方: node cli.ts <コマンド> [引数] [オプション]
 環境変数（~/.config/mindmap/env に KEY=値 で書いてもよい。環境変数が優先）:
   MINDMAP_URL                  サーバー（既定は手元の開発サーバー http://127.0.0.1:4381）
   MINDMAP_TOKEN                API トークン（デプロイ先を使うとき。Worker の secret API_TOKEN と同じ値）
+                               トークンは OWNER_EMAIL の人として動き、その人の領域を読み書きする
   MINDMAP_MAP                  既定のマップ名（省くと use で選んだもの）`;
 
-type Opts = { under?: string; after?: string; map?: string; replace?: boolean; root?: boolean; help?: boolean };
+type Opts = { under?: string; after?: string; map?: string; space?: string; replace?: boolean; root?: boolean; help?: boolean };
 
 function parseArgs(argv: string[]) {
   const pos: string[] = [], opt: Opts = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--under' || a === '--after' || a === '--map') opt[a.slice(2) as 'under' | 'after' | 'map'] = argv[++i];
+    if (a === '--under' || a === '--after' || a === '--map' || a === '--space') opt[a.slice(2) as 'under' | 'after' | 'map' | 'space'] = argv[++i];
     else if (a === '--replace' || a === '--root' || a === '--help') opt[a.slice(2) as 'replace' | 'root' | 'help'] = true;
     else if (a === '-h') opt.help = true;
     else pos.push(a);
@@ -99,7 +105,15 @@ async function api<T = any>(method: string, apiPath: string, body?: unknown): Pr
   return data as T;
 }
 
-function q(name: string | null) { return name ? '?name=' + encodeURIComponent(name) : ''; }
+// --space で選んだ領域。省くと自分の領域。
+let space = '';
+function q(name: string | null = null) {
+  const p = new URLSearchParams();
+  if (name) p.set('name', name);
+  if (space) p.set('space', space);
+  const s = p.toString();
+  return s ? '?' + s : '';
+}
 
 async function getMap(name: string | null): Promise<MindMap & { name: string; version: number }> {
   const m = await api('GET', '/api/map' + q(name));
@@ -118,9 +132,27 @@ async function main() {
   const { pos, opt } = parseArgs(process.argv.slice(2));
   const cmd = pos[0];
   if (!cmd || opt.help) { console.log(USAGE); return; }
+  space = opt.space ?? '';
+  if (space && !['maps', 'show', 'export'].includes(cmd)) throw new Error('--space で開ける共有の領域は閲覧のみです。maps・show・export だけ使えます');
 
+  if (cmd === 'spaces') {
+    const res = await api('GET', '/api/spaces');
+    for (const s of res.spaces) console.log(`${s.id === res.own ? '*' : ' '} ${s.id}\t${s.owner}\t${s.role === 'owner' ? '自分' : '閲覧のみ'}`);
+    return;
+  }
+  if (cmd === 'share') {
+    const sub = pos[1] || 'list';
+    let res;
+    if (sub === 'list') res = await api('GET', '/api/shares');
+    else if (sub === 'add') res = await api('POST', '/api/shares', { email: need(pos[2], 'メールアドレス') });
+    else if (sub === 'remove') res = await api('DELETE', '/api/shares', { email: need(pos[2], 'メールアドレス') });
+    else throw new Error(`share のあとは list・add・remove のどれかです: ${sub}`);
+    if (!res.shares.length) console.log(`領域 ${res.space} は誰にも共有していません`);
+    for (const s of res.shares) console.log(`${s.email}\t${s.since.slice(0, 10)} から`);
+    return;
+  }
   if (cmd === 'maps') {
-    const { current, maps } = await api('GET', '/api/maps');
+    const { current, maps } = await api('GET', '/api/maps' + q());
     if (!maps.length) { console.log('マップがありません。new <題名> --map <マップ名> で作るか、migrate で移してください'); return; }
     const fmt = (iso: string) => { const d = new Date(iso), z = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`; };
     for (const m of maps) console.log(`${m.name === current ? '*' : ' '} ${m.name}\t${m.title}\t中心 ${m.roots} 件\t${fmt(m.updatedAt)}`);
