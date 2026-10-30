@@ -19,9 +19,20 @@ export interface MapNode {
   /** 自由に置けた頃の印。読み込むときに外す。 */
   pinned?: boolean;
 }
+/** キャンバス上の四角い区画。x, y は左上。中のマップは持たず、画面で動かすときに中心ノードの位置で決める。 */
+export interface Board {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 export interface MindMap {
   uid: number;
   nodes: MapNode[];
+  /** 画面で作るボード。CLI の操作はそのまま残す。 */
+  boards?: Board[];
   /** 中心ノードが1つだった頃の形。読み込むときに直す。 */
   rootId?: string;
   rootPos?: { x: number; y: number };

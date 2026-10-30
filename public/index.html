@@ -16,6 +16,8 @@
     --muted: #6b7280;
     --hud-bg: rgba(255, 255, 255, 0.88);
     --hud-border: rgba(0, 0, 0, 0.08);
+    --board-bg: rgba(0, 0, 0, 0.035);
+    --board-border: rgba(0, 0, 0, 0.14);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -27,6 +29,8 @@
       --muted: #9ca3af;
       --hud-bg: rgba(32, 33, 38, 0.9);
       --hud-border: rgba(255, 255, 255, 0.1);
+      --board-bg: rgba(255, 255, 255, 0.035);
+      --board-border: rgba(255, 255, 255, 0.16);
     }
   }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
@@ -54,6 +58,22 @@
   .node.collapsed .toggle circle { fill: var(--toggle-fill); }
   .node.collapsed .toggle text { fill: #fff; }
   .link { fill: none; stroke-linecap: round; }
+  .board-rect { fill: var(--board-bg); stroke: var(--board-border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .board.selected .board-rect { stroke: var(--sel); stroke-width: 2; }
+  .board-title { cursor: move; }
+  .board-title rect { fill: var(--node-bg); stroke: var(--node-border); stroke-width: 1; }
+  .board.selected .board-title rect { stroke: var(--sel); }
+  .board-title text { fill: var(--fg); font-size: 13px; font-weight: 600; pointer-events: none; user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
+  .board.editing .board-title { visibility: hidden; }
+  .board-handle { fill: var(--node-bg); stroke: var(--sel); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .board-handle[data-corner="nw"], .board-handle[data-corner="se"] { cursor: nwse-resize; }
+  .board-handle[data-corner="ne"], .board-handle[data-corner="sw"] { cursor: nesw-resize; }
+  .board:not(.selected) .board-handle, body.readonly .board-handle { display: none; }
+  body.readonly .board-title { cursor: default; }
+  #board-editor { position: absolute; left: 0; top: 0; display: none; height: 24px; box-sizing: border-box; padding: 0 8px;
+    border-radius: 6px; border: 1px solid var(--sel); background: var(--node-bg); color: var(--fg); outline: none;
+    font: 600 13px -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
   #editor { position: absolute; left: 0; top: 0; transform-origin: 0 0; outline: none; white-space: pre;
     line-height: 1.2; min-width: 4px; background: transparent; color: var(--fg); display: none; caret-color: var(--sel);
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
@@ -108,12 +128,14 @@
 <body>
 <svg id="canvas" xmlns="http://www.w3.org/2000/svg">
   <g id="world">
+    <g id="boards"></g>
     <g id="links"></g>
     <g id="nodes"></g>
     <line id="insert-line"></line>
   </g>
 </svg>
 <div id="editor" contenteditable="true" spellcheck="false"></div>
+<input id="board-editor" type="text" spellcheck="false" autocomplete="off">
 
 <div id="toolbar" class="hud">
   <select id="space-select" title="領域を切り替える"></select>
@@ -124,6 +146,7 @@
   <button id="btn-add-map" class="edit-only">マップを追加</button>
   <span class="sep edit-only"></span>
   <button id="btn-new" class="edit-only">新規</button>
+  <button id="btn-add-board" class="edit-only" title="選択中のマップを囲む。選択がなければ画面の真ん中に置く">ボード</button>
   <span class="sep"></span>
   <button id="btn-zoom-out">−</button>
   <span id="zoom">100%</span>
@@ -178,6 +201,7 @@
   <span><kbd>⌘←</kbd> <kbd>⌘→</kbd> 選択中の枝を中心の左 / 右へ</span>
   <span>ドラッグで並べ替え・中心の左右へ移動、別のノードに重ねて付け替え</span>
   <span>中心ノードはドラッグで移動（<kbd>Shift</kbd> を押して重ねると付け替え）</span>
+  <span>「ボード」で選択中のマップを囲む区画を作る。名前をドラッグで中のマップごと移動、角で大きさを変える、名前を<kbd>ダブルクリック</kbd>で改名、選んで <kbd>Delete</kbd> でボードだけ消す</span>
   <span>背景ドラッグ・スクロールで移動、ピンチ / <kbd>⌘</kbd>+スクロールで拡大縮小</span>
   <span><kbd>⌘Z</kbd> 取り消し　<kbd>⌘0</kbd> 全体を表示</span>
   <span id="account"><span id="account-email"></span> でログイン中 · <a id="btn-logout">ログアウト</a></span>
@@ -196,6 +220,8 @@
   const world = document.getElementById('world');
   const linksG = document.getElementById('links');
   const nodesG = document.getElementById('nodes');
+  const boardsG = document.getElementById('boards');
+  const boardEditor = document.getElementById('board-editor');
   const insertLine = document.getElementById('insert-line');
   const editor = document.getElementById('editor');
   const zoomLabel = document.getElementById('zoom');
@@ -217,6 +243,10 @@
   let animating = false;
   let hCache = new Map();
   const nodeEls = new Map(), linkEls = new Map();
+  // ボードはキャンバス上の四角い区画 { id, name, x, y, w, h }（x, y は左上）。選択はノードとどちらか一方だけ。
+  let boards = [];
+  let selectedBoardId = null, editingBoardId = null, boardDrag = null;
+  const boardEls = new Map();
 
   // ---------- データ ----------
   function makeNode(text, parentId) {
@@ -229,7 +259,8 @@
     return { uid, nodes: [...nodes.values()].map(n => ({
       id: n.id, text: n.text, parentId: n.parentId, children: n.children.slice(), side: n.side,
       layout: isRoot(n) ? layoutOf(n) : undefined,
-      dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed })) };
+      dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed })),
+      boards: boards.map(b => ({ id: b.id, name: b.name, x: b.x, y: b.y, w: b.w, h: b.h })) };
   }
   // 古い形式を、いまの形式に直す。中心ノードが1つだった頃の rootId と rootPos を中心ノードの位置に移し、
   // 中心ノード以外を自由に置けた頃の固定（pinned と dx, dy）を外す。
@@ -255,8 +286,10 @@
       nodes.set(n.id, n);
     }
     uid = data.uid;
+    boards = (data.boards || []).map(b => ({ id: b.id, name: b.name, x: b.x, y: b.y, w: b.w, h: b.h }));
     for (const n of nodes.values()) { const o = old.get(n.id); if (o) { n.vx = o.vx; n.vy = o.vy; } }
     if (!nodes.has(selectedId)) selectedId = null;
+    if (!boards.some(b => b.id === selectedBoardId)) selectedBoardId = null;
   }
   // 保存先はサーバーの /api/map?name=<マップ名>。読み込んだときの版番号 version を添えて丸ごと置き換え、
   // 別の場所で先に書かれていたら（409）サーバーの最新を取り込む。届かないときは localStorage だけに残す。
@@ -521,6 +554,7 @@
 
   function newMap() {
     nodes = new Map(); uid = 1; undoStack = []; redoStack = [];
+    boards = []; selectedBoardId = null;
     const root = makeNode('中心テーマ', null);
     nodes.set(root.id, root);
     selectedId = root.id;
@@ -787,6 +821,113 @@
     pasteTrees(trees);
   });
 
+  // ---------- ボード ----------
+  // ボードはマップをまとめて動かすための区画。どのマップが中にあるかは持たず、
+  // 名前をつかんで動かし始めたときに、中心ノードがボードの内側にあるマップと、内側にすっぽり入るボードを中身とみなす。
+  const BOARD_PAD = 48, BOARD_TITLE = 40, BOARD_MIN_W = 160, BOARD_MIN_H = 100;
+  const BOARD_LABEL_FONT = '600 13px ' + FONT_FAMILY;
+  function boardById(id) { return boards.find(b => b.id === id); }
+  function boardContains(b, x, y) { return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h; }
+  function boardInside(outer, b) { return b !== outer && b.x >= outer.x && b.y >= outer.y && b.x + b.w <= outer.x + outer.w && b.y + b.h <= outer.y + outer.h; }
+  function selectBoard(id) { selectedBoardId = id; if (id) selectedId = null; }
+  // 選択中のノードのマップを囲む。選択がなければ画面の真ん中に置く。
+  function addBoard() {
+    if (readOnly) return;
+    finishEdit();
+    pushUndo();
+    const sel = nodes.get(selectedId);
+    let x, y, w, h;
+    if (sel) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const id of subtreeIds(rootOf(sel))) {
+        const n = nodes.get(id); if (n.hidden) continue;
+        minX = Math.min(minX, n.cx - n.w / 2); maxX = Math.max(maxX, n.cx + n.w / 2);
+        minY = Math.min(minY, n.cy - n.h / 2); maxY = Math.max(maxY, n.cy + n.h / 2);
+      }
+      x = minX - BOARD_PAD; y = minY - BOARD_PAD - BOARD_TITLE;
+      w = maxX - minX + BOARD_PAD * 2; h = maxY - minY + BOARD_PAD * 2 + BOARD_TITLE;
+    } else {
+      const c = toWorld(vw() / 2, vh() / 2);
+      w = 800; h = 500; x = c.x - w / 2; y = c.y - h / 2;
+    }
+    const b = { id: 'b' + (uid++), name: `ボード ${boards.length + 1}`, x, y, w, h };
+    boards.push(b);
+    selectBoard(b.id);
+    commit();
+    startBoardEdit(b.id);
+  }
+  // ボードだけを消す。中のマップは残す。
+  function removeBoard(id) {
+    if (!boardById(id)) return;
+    pushUndo();
+    boards = boards.filter(b => b.id !== id);
+    selectedBoardId = null;
+    commit();
+  }
+  function startBoardEdit(id) {
+    const b = boardById(id); if (!b || readOnly) return;
+    finishEdit(); finishBoardEdit();
+    editingBoardId = id;
+    boardEditor.value = b.name;
+    boardEditor.style.display = 'block';
+    draw();
+    boardEditor.focus(); boardEditor.select();
+  }
+  function finishBoardEdit(cancel = false) {
+    if (!editingBoardId) return;
+    const b = boardById(editingBoardId);
+    editingBoardId = null;
+    boardEditor.style.display = 'none';
+    const name = boardEditor.value.replace(/[\r\n]/g, '').trim();
+    if (!cancel && b && name && name !== b.name) { pushUndo(); b.name = name; commit(); } else requestDraw();
+  }
+  boardEditor.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter') { e.preventDefault(); finishBoardEdit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); finishBoardEdit(true); }
+  });
+  boardEditor.addEventListener('blur', () => finishBoardEdit());
+  function syncBoards() {
+    for (const [id, e] of boardEls) if (!boardById(id)) { e.g.remove(); boardEls.delete(id); }
+    for (const b of boards) {
+      if (boardEls.has(b.id)) continue;
+      const g = el('g', { class: 'board' }); g.dataset.id = b.id;
+      const rect = el('rect', { class: 'board-rect', rx: 12, ry: 12 });
+      const title = el('g', { class: 'board-title' });
+      const tRect = el('rect', { rx: 6, ry: 6, height: 24 });
+      const tText = el('text', { x: 8, y: 12, 'dominant-baseline': 'central' });
+      title.append(tRect, tText);
+      const handles = ['nw', 'ne', 'sw', 'se'].map(c => { const h = el('rect', { class: 'board-handle', rx: 2, ry: 2 }); h.dataset.corner = c; return h; });
+      g.append(rect, title, ...handles);
+      boardEls.set(b.id, { g, rect, title, tRect, tText, handles });
+    }
+    // 大きいボードを奥に置き、入れ子のボードが上に見えるようにする
+    for (const b of [...boards].sort((p, q) => q.w * q.h - p.w * p.h)) boardsG.appendChild(boardEls.get(b.id).g);
+  }
+  // 名前と角の印は、拡大率によらず画面上で同じ大きさにする
+  function drawBoards() {
+    const k = 1 / view.s, hs = 10 * k;
+    meas.font = BOARD_LABEL_FONT;
+    for (const b of boards) {
+      const e = boardEls.get(b.id);
+      e.g.setAttribute('class', 'board' + (b.id === selectedBoardId ? ' selected' : '') + (b.id === editingBoardId ? ' editing' : ''));
+      e.rect.setAttribute('x', b.x); e.rect.setAttribute('y', b.y);
+      e.rect.setAttribute('width', b.w); e.rect.setAttribute('height', b.h);
+      if (e.tText.textContent !== b.name) e.tText.textContent = b.name;
+      e.tRect.setAttribute('width', Math.ceil(meas.measureText(b.name).width) + 16);
+      e.title.setAttribute('transform', `translate(${b.x + 10 * k},${b.y + 10 * k}) scale(${k})`);
+      for (const h of e.handles) {
+        const c = h.dataset.corner;
+        h.setAttribute('x', (c.includes('w') ? b.x : b.x + b.w) - hs / 2);
+        h.setAttribute('y', (c.includes('n') ? b.y : b.y + b.h) - hs / 2);
+        h.setAttribute('width', hs); h.setAttribute('height', hs);
+      }
+    }
+    const eb = editingBoardId && boardById(editingBoardId);
+    if (eb) boardEditor.style.transform = `translate(${view.tx + view.s * eb.x + 10}px, ${view.ty + view.s * eb.y + 10}px)`;
+  }
+
   // ---------- レイアウト ----------
   function measure(n) {
     const root = isRoot(n);
@@ -844,6 +985,7 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   function el(tag, attrs = {}) { const e = document.createElementNS(SVG_NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
   function syncDom() {
+    syncBoards();
     for (const [id, e] of nodeEls) if (!nodes.has(id)) { e.g.remove(); nodeEls.delete(id); }
     for (const [id, p] of linkEls) if (!nodes.has(id) || !nodes.get(id).parentId) { p.remove(); linkEls.delete(id); }
     for (const n of nodes.values()) {
@@ -888,6 +1030,7 @@
     initVisuals();
     world.setAttribute('transform', `translate(${view.tx},${view.ty}) scale(${view.s})`);
     zoomLabel.textContent = Math.round(view.s * 100) + '%';
+    drawBoards();
     const sel = nodes.get(selectedId), mode = sel ? layoutOf(rootOf(sel)) : null;
     for (const b of layoutButtons) { b.disabled = !sel; b.classList.toggle('active', b.dataset.layout === mode); }
     const branch = sel && branchOf(sel);
@@ -999,6 +1142,10 @@
       minX = Math.min(minX, n.cx - n.w / 2); maxX = Math.max(maxX, n.cx + n.w / 2);
       minY = Math.min(minY, n.cy - n.h / 2); maxY = Math.max(maxY, n.cy + n.h / 2);
     }
+    for (const b of boards) {
+      minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x + b.w);
+      minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y + b.h);
+    }
     const W = vw(), H = vh();
     const s = Math.min(1.5, (W - 120) / Math.max(1, maxX - minX), (H - 120) / Math.max(1, maxY - minY));
     view.s = Math.max(MIN_SCALE, s);
@@ -1067,6 +1214,18 @@
     if (e.button !== 0) return;
     const g = e.target.closest && e.target.closest('.node');
     const w = toWorld(e.clientX, e.clientY);
+    // ボードは名前で動かし、角で大きさを変える。ボードの内側の余白は背景と同じに扱う
+    const bt = !readOnly && !g && e.target.closest && e.target.closest('.board-title, .board-handle');
+    if (bt) {
+      finishEdit(); finishBoardEdit();
+      const b = boardById(bt.closest('.board').dataset.id);
+      selectBoard(b.id);
+      boardDrag = { b, corner: bt.dataset.corner || null, startX: e.clientX, startY: e.clientY, start: w,
+        orig: { x: b.x, y: b.y, w: b.w, h: b.h }, moved: false, roots: [], inner: [] };
+      svg.setPointerCapture(e.pointerId);
+      requestDraw();
+      return;
+    }
     if (g && e.target.closest('.toggle')) { if (!readOnly) { finishEdit(); toggleCollapse(g.dataset.id); } return; }
     if (g && readOnly) { selectedId = g.dataset.id; requestDraw(); return; }
     if (g) {
@@ -1075,16 +1234,44 @@
       if (editingId === n.id) return;
       drag = { id: n.id, startX: e.clientX, startY: e.clientY, grabDX: n.cx - w.x, grabDY: n.cy - w.y, moved: false,
         sub: null, off: NO_OFFSET, drop: null };
-      selectedId = n.id; requestDraw();
+      selectedId = n.id; selectedBoardId = null; requestDraw();
     } else {
-      finishEdit();
+      finishEdit(); finishBoardEdit();
       pan = { startX: e.clientX, startY: e.clientY, tx: view.tx, ty: view.ty, moved: false };
       svg.classList.add('panning');
     }
     svg.setPointerCapture(e.pointerId);
   });
   svg.addEventListener('pointermove', e => {
-    if (drag) {
+    if (boardDrag) {
+      const d = boardDrag, b = d.b, o = d.orig;
+      if (!d.moved) {
+        if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 4) return;
+        d.moved = true;
+        pushUndo();
+        if (!d.corner) {
+          d.roots = roots().filter(r => boardContains(o, r.dx, r.dy)).map(r => ({ r, x: r.dx, y: r.dy }));
+          d.inner = boards.filter(q => boardInside(b, q)).map(q => ({ q, x: q.x, y: q.y }));
+        }
+      }
+      const w = toWorld(e.clientX, e.clientY);
+      const mx = w.x - d.start.x, my = w.y - d.start.y;
+      if (d.corner) {
+        // 反対の角を固定して大きさを変える。中のマップは動かさない
+        let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h;
+        if (d.corner.includes('w')) x1 = Math.min(x1 + mx, x2 - BOARD_MIN_W); else x2 = Math.max(x2 + mx, x1 + BOARD_MIN_W);
+        if (d.corner.includes('n')) y1 = Math.min(y1 + my, y2 - BOARD_MIN_H); else y2 = Math.max(y2 + my, y1 + BOARD_MIN_H);
+        Object.assign(b, { x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
+      } else {
+        b.x = o.x + mx; b.y = o.y + my;
+        for (const it of d.inner) { it.q.x = it.x + mx; it.q.y = it.y + my; }
+        for (const it of d.roots) { it.r.dx = it.x + mx; it.r.dy = it.y + my; }
+        layout();
+        // 中のマップはボードに遅れずについてくる
+        for (const it of d.roots) for (const id of subtreeIds(it.r)) { const n = nodes.get(id); n.vx = n.cx; n.vy = n.cy; }
+      }
+      requestDraw();
+    } else if (drag) {
       const n = nodes.get(drag.id); if (!n) return;
       if (!drag.moved) {
         if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 4) return;
@@ -1114,6 +1301,12 @@
     }
   });
   function endPointer(e, cancelled = false) {
+    if (boardDrag) {
+      const d = boardDrag;
+      boardDrag = null;
+      if (d.moved) commit();
+      requestDraw();
+    }
     if (drag) {
       const n = nodes.get(drag.id);
       const d = drag;
@@ -1125,7 +1318,7 @@
       requestDraw();
     }
     if (pan) {
-      if (!pan.moved) { selectedId = null; requestDraw(); }
+      if (!pan.moved) { selectedId = null; selectedBoardId = null; requestDraw(); }
       pan = null; svg.classList.remove('panning');
     }
   }
@@ -1136,6 +1329,8 @@
     const hit = document.elementFromPoint(e.clientX, e.clientY) || e.target;
     const g = hit.closest && hit.closest('.node');
     if (readOnly || (g && hit.closest('.toggle'))) return;
+    const bt = !g && hit.closest && hit.closest('.board-title');
+    if (bt) { e.preventDefault(); startBoardEdit(bt.closest('.board').dataset.id); return; }
     if (g) { e.preventDefault(); startEdit(g.dataset.id); }
     else if (!g) { e.preventDefault(); const w = toWorld(e.clientX, e.clientY); addRoot(w.x, w.y); }
   });
@@ -1194,6 +1389,12 @@
     }
     if (meta && !e.altKey && ['c', 'x', 'v'].includes(e.key.toLowerCase())) { onClipKey(e.key.toLowerCase()); return; }
     if (meta) return;
+    if (selectedBoardId) {
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); removeBoard(selectedBoardId); }
+      else if (e.key === 'Enter') { e.preventDefault(); startBoardEdit(selectedBoardId); }
+      else if (e.key === 'Escape') { selectedBoardId = null; requestDraw(); }
+      return;
+    }
     if (!selectedId) { if (e.key === 'Tab') { e.preventDefault(); selectedId = roots()[0].id; requestDraw(); } return; }
     switch (e.key) {
       case 'Tab': e.preventDefault(); addChild(selectedId); break;
@@ -1212,6 +1413,7 @@
     if (nodes.size > 1 && !confirm('いまのマップを消して新しく始めますか？')) return;
     newMap(); startEdit(selectedId);
   });
+  document.getElementById('btn-add-board').addEventListener('click', addBoard);
   document.getElementById('btn-zoom-in').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1.2));
   document.getElementById('btn-zoom-out').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1 / 1.2));
   document.getElementById('btn-fit').addEventListener('click', fitView);

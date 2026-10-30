@@ -140,7 +140,8 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 - `lib/ops.ts`: CLI の操作（add・move など）を、名前の解決ごとマップに当てる。Durable Object が呼ぶ。
 - `cli.ts`: コマンドの入口。`node cli.ts` でそのまま動く（Node 23.6 以上）。
 - `cloudflare.config.ts`: Worker・binding・Durable Object・secret の宣言と、デプロイ先のアカウント。`wrangler.config.ts`: 静的アセットの置き場と手元の開発サーバーのポート。
-- 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }] }`。版番号はマップごとに書き込むたびに1つ上がる。
+- 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }], boards: [{ id, name, x, y, w, h }] }`。版番号はマップごとに書き込むたびに1つ上がる。
+  `boards` は画面で作るボード（四角い区画、`x, y` は左上）。中のマップは持たず、画面で動かすときに中心ノードの位置で決める。CLI の操作は `boards` に触れずにそのまま残す。
   `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置、`layout` は配置（`both`・`right`・`left`、省略時は `both`）。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
   中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。
 - 型の確認は `npm run typecheck`。
