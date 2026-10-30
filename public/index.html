@@ -703,7 +703,7 @@
     if (cut && !readOnly) deleteNode(n.id);
     return clip.text;
   }
-  // 選択中のノードの子として足す。選択がなければ、画面の真ん中に新しいマップとして置く。
+  // 選択中のノードの子として足す。中心ノード（「# 見出し」を含む）と、選択がないときは、新しいマップとして置く。
   function pasteTrees(trees) {
     if (!trees.length || readOnly) return;
     pushUndo();
@@ -715,20 +715,24 @@
       return n;
     };
     const parent = nodes.get(selectedId);
+    const branches = parent ? trees.filter(it => !it.root) : [];
+    const maps = parent ? trees.filter(it => it.root) : trees;
     let first = null;
-    if (parent) {
+    if (branches.length) {
       parent.collapsed = false;
-      for (const it of trees) {
+      for (const it of branches) {
         const n = build(it, parent.id);
         if (isRoot(parent)) { n.side = newSide(parent); n.colorIndex = nextColor(parent); }
         parent.children.push(n.id);
         first = first || n;
       }
-    } else {
+    }
+    if (maps.length) {
       // 重ならないよう、いまあるノードの下に縦に並べ、最初のマップへ画面を寄せる
+      layout();
       let bottom = -Infinity;
       for (const n of nodes.values()) if (!n.hidden) bottom = Math.max(bottom, n.cy + n.h / 2);
-      const added = trees.map(it => {
+      const added = maps.map(it => {
         const r = build(it, null);
         r.layout = it.layout || 'both';
         r.children.forEach((id, j) => {
