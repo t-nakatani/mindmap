@@ -7,125 +7,245 @@
 <!-- 静的ファイル配信やサーバー再起動なしで使えるよう、favicon.svg を埋め込む。 -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2216%22%20fill%3D%22%2324262d%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke-width%3D%225%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M28%2032H22Q16%2032%2016%2024V18H12%22%20stroke%3D%22%23e9a21a%22%2F%3E%3Cpath%20d%3D%22M36%2032H42Q48%2032%2048%2024V16H52%22%20stroke%3D%22%233fa34d%22%2F%3E%3Cpath%20d%3D%22M36%2032H42Q48%2032%2048%2040V48H52%22%20stroke%3D%22%237c5cde%22%2F%3E%3Cpath%20d%3D%22M28%2032H22Q16%2032%2016%2040V46H12%22%20stroke%3D%22%23e4572e%22%2F%3E%3C%2Fg%3E%3Crect%20x%3D%226%22%20y%3D%2212%22%20width%3D%2214%22%20height%3D%2210%22%20rx%3D%224%22%20fill%3D%22%23e9a21a%22%2F%3E%3Crect%20x%3D%2244%22%20y%3D%2210%22%20width%3D%2214%22%20height%3D%2210%22%20rx%3D%224%22%20fill%3D%22%233fa34d%22%2F%3E%3Crect%20x%3D%2244%22%20y%3D%2244%22%20width%3D%2214%22%20height%3D%2210%22%20rx%3D%224%22%20fill%3D%22%237c5cde%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2242%22%20width%3D%2214%22%20height%3D%2210%22%20rx%3D%224%22%20fill%3D%22%23e4572e%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2222%22%20width%3D%2220%22%20height%3D%2220%22%20rx%3D%227%22%20fill%3D%22%236ea2ff%22%20stroke%3D%22%2324262d%22%20stroke-width%3D%223%22%2F%3E%3C%2Fsvg%3E">
 <style>
+  /* 色・余白・角丸・影は Figma「Mind Map — UI」の変数と同じ名前にしてある（Foundations ページ）。
+     値を変えるときは Figma の変数を先に変え、ここへ写す。 */
   :root {
-    --bg: #f5f4f0;
-    --fg: #1f2328;
-    --node-bg: #ffffff;
-    --node-border: #cfcbc2;
-    --sel: #2f6feb;
-    --muted: #6b7280;
-    --hud-bg: rgba(255, 255, 255, 0.88);
-    --hud-border: rgba(0, 0, 0, 0.08);
-    --board-bg: rgba(0, 0, 0, 0.035);
-    --board-border: rgba(0, 0, 0, 0.14);
+    color-scheme: light;
+    --color-bg-canvas: #f5f4f0;
+    --color-bg-node: #ffffff;
+    --color-bg-panel: rgba(255, 255, 255, 0.88);
+    --color-bg-popover: #ffffff;
+    --color-bg-control: #ffffff;
+    --color-bg-hover: rgba(0, 0, 0, 0.05);
+    --color-bg-segment: rgba(0, 0, 0, 0.05);
+    --color-bg-segment-active: #ffffff;
+    --color-bg-accent: #2f6feb;
+    --color-bg-accent-subtle: rgba(47, 111, 235, 0.10);
+    --color-bg-board: rgba(0, 0, 0, 0.035);
+    --color-bg-kbd: rgba(127, 127, 127, 0.15);
+    --color-text-primary: #1f2328;
+    --color-text-secondary: #6b7280;
+    --color-text-accent: #2f6feb;
+    --color-text-link: #2f6feb;
+    --color-text-on-accent: #ffffff;
+    --color-text-on-branch: #ffffff;
+    --color-text-danger: #e4572e;
+    --color-border-node: #cfcbc2;
+    --color-border-panel: rgba(0, 0, 0, 0.08);
+    --color-border-control: rgba(0, 0, 0, 0.12);
+    --color-border-board: rgba(0, 0, 0, 0.14);
+    --color-border-accent: #2f6feb;
+    --color-shadow-soft: rgba(0, 0, 0, 0.06);
+    --color-shadow-strong: rgba(0, 0, 0, 0.10);
+    --color-branch-1: #e4572e;
+    --color-branch-2: #e9a21a;
+    --color-branch-3: #3fa34d;
+    --color-branch-4: #1f9e8f;
+    --color-branch-5: #2f6feb;
+    --color-branch-6: #7c5cde;
+    --color-branch-7: #c63fb5;
+    --color-branch-8: #e0456f;
+    --space-2: 2px; --space-4: 4px; --space-6: 6px; --space-8: 8px; --space-12: 12px;
+    --space-16: 16px; --space-20: 20px; --space-24: 24px; --space-32: 32px;
+    --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px; --radius-node: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-full: 999px;
+    --size-control: 32px; --size-icon: 16px;
+    --shadow-panel: 0 1px 2px var(--color-shadow-soft), 0 6px 20px var(--color-shadow-soft);
+    --shadow-popover: 0 2px 6px var(--color-shadow-soft), 0 12px 32px var(--color-shadow-strong);
+    --shadow-control: 0 1px 2px var(--color-shadow-strong);
+    --font-sans: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Helvetica Neue", sans-serif;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #1b1c20;
-      --fg: #e8e8ea;
-      --node-bg: #2a2b31;
-      --node-border: #45474f;
-      --sel: #6ea2ff;
-      --muted: #9ca3af;
-      --hud-bg: rgba(32, 33, 38, 0.9);
-      --hud-border: rgba(255, 255, 255, 0.1);
-      --board-bg: rgba(255, 255, 255, 0.035);
-      --board-border: rgba(255, 255, 255, 0.16);
+      color-scheme: dark;
+      --color-bg-canvas: #1b1c20;
+      --color-bg-node: #2a2b31;
+      --color-bg-panel: rgba(32, 33, 38, 0.92);
+      --color-bg-popover: #202126;
+      --color-bg-control: #2a2b31;
+      --color-bg-hover: rgba(255, 255, 255, 0.08);
+      --color-bg-segment: rgba(255, 255, 255, 0.06);
+      --color-bg-segment-active: #383a42;
+      --color-bg-accent: #6ea2ff;
+      --color-bg-accent-subtle: rgba(110, 162, 255, 0.18);
+      --color-bg-board: rgba(255, 255, 255, 0.035);
+      --color-text-primary: #e8e8ea;
+      --color-text-secondary: #9ca3af;
+      --color-text-accent: #6ea2ff;
+      --color-text-link: #6ea2ff;
+      --color-text-on-accent: #1b1c20;
+      --color-text-danger: #f07a57;
+      --color-border-node: #45474f;
+      --color-border-panel: rgba(255, 255, 255, 0.10);
+      --color-border-control: rgba(255, 255, 255, 0.14);
+      --color-border-board: rgba(255, 255, 255, 0.16);
+      --color-border-accent: #6ea2ff;
+      --color-shadow-soft: rgba(0, 0, 0, 0.30);
+      --color-shadow-strong: rgba(0, 0, 0, 0.45);
     }
   }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: var(--color-bg-canvas); color: var(--color-text-primary);
+    font-family: var(--font-sans); font-size: 13px; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--color-border-accent); outline-offset: 2px; }
+
+  /* ---------- キャンバス ---------- */
   #canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
   #canvas.panning { cursor: grabbing; }
   .node { cursor: default; }
-  .node rect { fill: var(--node-bg); stroke: var(--node-border); stroke-width: 1.5; transition: stroke .12s; }
-  .node.selected rect { stroke: var(--sel) !important; stroke-width: 2.5; }
-  .node.drop-target rect { stroke: var(--sel) !important; stroke-width: 2.5; stroke-dasharray: 6 4; }
+  .node .body { fill: var(--color-bg-node); stroke: var(--color-border-node); stroke-width: 1.5; transition: stroke .12s; }
+  .node.root .body { stroke-width: 2; }
+  .node .sel-ring { fill: none; stroke: var(--color-border-accent); stroke-width: 2; display: none; }
+  .node.selected .sel-ring { display: block; }
+  .node.drop-target .body { stroke: var(--color-border-accent) !important; stroke-width: 2.5; stroke-dasharray: 6 4; }
   .node.dragging { opacity: .4; }
-  #insert-line { stroke: var(--sel); stroke-width: 4; stroke-linecap: round; display: none; }
-  .node text { fill: var(--fg); font-size: 15px; pointer-events: none; user-select: none;
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
+  #insert-line { stroke: var(--color-border-accent); stroke-width: 4; stroke-linecap: round; display: none; }
+  .node text { fill: var(--color-text-primary); font-size: 15px; pointer-events: none; user-select: none; font-family: var(--font-sans); }
   .node.root text { font-size: 18px; font-weight: 600; }
-  .node.root rect { stroke-width: 2; }
   .node.editing text { visibility: hidden; }
   .node.hidden, .link.hidden { display: none; }
   .toggle { cursor: pointer; }
-  .toggle circle { fill: var(--node-bg); stroke-width: 1.5; }
-  .toggle text { font-size: 11px; font-weight: 600; pointer-events: none; user-select: none; fill: var(--fg); }
+  .toggle rect { fill: var(--color-bg-node); stroke-width: 1.5; }
+  .toggle text { font-size: 11px; font-weight: 700; pointer-events: none; user-select: none; fill: var(--color-text-on-branch); }
   .toggle .dash { stroke-width: 2; stroke-linecap: round; }
   .node:not(.collapsed) .toggle { opacity: 0; transition: opacity .12s; }
   .node:not(.collapsed):hover .toggle, .node:not(.collapsed).selected .toggle { opacity: 1; }
-  .node.collapsed .toggle circle { fill: var(--toggle-fill); }
-  .node.collapsed .toggle text { fill: #fff; }
+  .node.collapsed .toggle rect { fill: var(--toggle-fill); }
   .link { fill: none; stroke-linecap: round; }
-  .board-rect { fill: var(--board-bg); stroke: var(--board-border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-  .board.selected .board-rect { stroke: var(--sel); stroke-width: 2; }
+  .board-rect { fill: var(--color-bg-board); stroke: var(--color-border-board); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .board.selected .board-rect { stroke: var(--color-border-accent); stroke-width: 2; }
   .board-title { cursor: move; }
-  .board-title rect { fill: var(--node-bg); stroke: var(--node-border); stroke-width: 1; }
-  .board.selected .board-title rect { stroke: var(--sel); }
-  .board-title text { fill: var(--fg); font-size: 13px; font-weight: 600; pointer-events: none; user-select: none;
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
+  .board-title rect { fill: var(--color-bg-node); stroke: var(--color-border-node); stroke-width: 1; }
+  .board.selected .board-title rect { stroke: var(--color-border-accent); }
+  .board-title text { fill: var(--color-text-primary); font-size: 13px; font-weight: 600; pointer-events: none; user-select: none; font-family: var(--font-sans); }
   .board.editing .board-title { visibility: hidden; }
-  .board-handle { fill: var(--node-bg); stroke: var(--sel); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .board-handle { fill: var(--color-bg-node); stroke: var(--color-border-accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
   .board-handle[data-corner="nw"], .board-handle[data-corner="se"] { cursor: nwse-resize; }
   .board-handle[data-corner="ne"], .board-handle[data-corner="sw"] { cursor: nesw-resize; }
   .board:not(.selected) .board-handle, body.readonly .board-handle { display: none; }
   body.readonly .board-title { cursor: default; }
   #board-editor { position: absolute; left: 0; top: 0; display: none; height: 24px; box-sizing: border-box; padding: 0 8px;
-    border-radius: 6px; border: 1px solid var(--sel); background: var(--node-bg); color: var(--fg); outline: none;
-    font: 600 13px -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
+    border-radius: var(--radius-sm); border: 1px solid var(--color-border-accent); background: var(--color-bg-node); color: var(--color-text-primary); outline: none;
+    font: 600 13px var(--font-sans); }
   #editor { position: absolute; left: 0; top: 0; transform-origin: 0 0; outline: none; white-space: pre;
-    line-height: 1.2; min-width: 4px; background: transparent; color: var(--fg); display: none; caret-color: var(--sel);
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif; }
-  .hud { position: absolute; display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-radius: 10px;
-    background: var(--hud-bg); border: 1px solid var(--hud-border); backdrop-filter: blur(8px); font-size: 13px; }
-  #toolbar { left: 12px; bottom: 12px; flex-wrap: wrap; max-width: calc(100% - 24px); }
-  #toolbar button { white-space: nowrap; }
-  #help { right: 12px; top: 12px; display: block; width: max-content; max-width: min(460px, calc(100% - 24px)); color: var(--muted); font-size: 12px; }
-  #help span { display: block; margin-top: 3px; }
-  #help summary { cursor: pointer; list-style: none; color: var(--fg); font-weight: 600; user-select: none; outline: none; }
-  #help summary::-webkit-details-marker { display: none; }
-  #help summary::before { content: '▸'; display: inline-block; width: 1em; color: var(--muted); }
-  #help[open] summary::before { content: '▾'; }
-  #help[open] summary { margin-bottom: 2px; }
-  #help kbd { font-family: inherit; background: rgba(127,127,127,.15); border-radius: 4px; padding: 0 5px; color: var(--fg); }
-  button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--hud-border);
-    background: var(--node-bg); color: var(--fg); cursor: pointer; }
-  button:hover { border-color: var(--sel); }
-  #layout-group button.active, #side-group button.active { border-color: var(--sel); color: var(--sel); }
-  #layout-group button:disabled, #side-group button:disabled { opacity: .4; cursor: default; border-color: var(--hud-border); }
-  .group-label { color: var(--muted); }
-  #zoom { min-width: 44px; text-align: center; color: var(--muted); }
-  select { font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--hud-border);
-    background: var(--node-bg); color: var(--fg); max-width: 200px; }
-  .sep { width: 1px; height: 18px; background: var(--hud-border); margin: 0 4px; }
-  #login { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: var(--bg); z-index: 10; }
-  #login.show { display: flex; }
-  #login .box { display: flex; flex-direction: column; gap: 14px; align-items: center; padding: 28px 32px; border-radius: 14px;
-    background: var(--hud-bg); border: 1px solid var(--hud-border); max-width: calc(100% - 32px); text-align: center; }
-  #login h1 { margin: 0; font-size: 18px; font-weight: 600; }
-  #login a { font-size: 14px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--hud-border); background: var(--node-bg);
-    color: var(--fg); text-decoration: none; }
-  #login a:hover { border-color: var(--sel); }
-  #login-error { color: #e4572e; font-size: 13px; min-height: 1em; }
-  #account { display: none; }
-  #account a { color: var(--muted); cursor: pointer; text-decoration: underline; }
-  #space-select, #btn-share, #space-sep, #readonly-badge { display: none; }
-  #readonly-badge { color: var(--muted); border: 1px dashed var(--hud-border); border-radius: 6px; padding: 3px 8px; }
+    line-height: 1.2; min-width: 4px; background: transparent; color: var(--color-text-primary); display: none; caret-color: var(--color-border-accent);
+    font-family: var(--font-sans); }
+
+  /* ---------- ツールバー（Figma: Components / ツールバー） ---------- */
+  .toolbar { position: absolute; z-index: 2; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4); box-sizing: border-box;
+    border-radius: var(--radius-lg); background: var(--color-bg-panel); border: 1px solid var(--color-border-panel);
+    box-shadow: var(--shadow-panel); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  #nav { left: 16px; top: 16px; max-width: calc(100% - 32px - 140px); }
+  #actions { right: 16px; top: 16px; }
+  #dock { position: absolute; z-index: 2; left: 16px; right: 16px; bottom: 16px; display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: end; gap: var(--space-8); pointer-events: none; }
+  #dock > .toolbar { position: static; pointer-events: auto; }
+  #edit-bar { grid-column: 2; }
+  #zoom-bar { grid-column: 3; justify-self: end; }
   body.readonly .edit-only { display: none !important; }
-  #share-panel { left: 12px; bottom: 64px; display: none; flex-direction: column; align-items: stretch; gap: 8px; width: min(360px, calc(100% - 24px)); }
-  #share-panel.show { display: flex; }
-  #share-panel h2 { margin: 0; font-size: 13px; font-weight: 600; }
-  #share-panel p { margin: 0; color: var(--muted); font-size: 12px; }
-  #share-list { display: flex; flex-direction: column; gap: 4px; }
-  #share-list div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  #share-form { display: flex; gap: 6px; }
-  #share-form input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 6px;
-    border: 1px solid var(--hud-border); background: var(--node-bg); color: var(--fg); }
-  #share-error { color: #e4572e; font-size: 12px; min-height: 1em; }
+
+  .btn, .icon-btn { height: var(--size-control); box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-6);
+    padding: 0 10px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text-primary);
+    font: 400 13px/18px var(--font-sans); white-space: nowrap; cursor: pointer; text-decoration: none; flex: none; }
+  .btn:hover, .icon-btn:hover { background: var(--color-bg-hover); }
+  .btn:disabled, .icon-btn:disabled { opacity: .4; cursor: default; background: transparent; }
+  .btn-outline { background: var(--color-bg-control); box-shadow: inset 0 0 0 1px var(--color-border-control); }
+  .btn-primary { background: var(--color-bg-accent); color: var(--color-text-on-accent); font-weight: 500; }
+  .btn-primary:hover { background: var(--color-bg-accent); opacity: .9; }
+  .icon-btn { width: var(--size-control); padding: 0; }
+  .icon-btn[aria-expanded="true"] { background: var(--color-bg-accent-subtle); color: var(--color-text-accent); }
+  .icon { width: var(--size-icon); height: var(--size-icon); flex: none; fill: none; stroke: currentColor; stroke-width: 1.75;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .mark { display: inline-flex; padding: 0 2px 0 6px; flex: none; }
+  .mark svg { width: 24px; height: 24px; }
+  .select-wrap { position: relative; display: inline-flex; min-width: 0; }
+  .select-wrap .icon { position: absolute; right: 8px; top: 8px; pointer-events: none; color: var(--color-text-secondary); }
+  .select { appearance: none; -webkit-appearance: none; height: var(--size-control); min-width: 0; max-width: 220px; padding: 0 30px 0 10px;
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text-primary);
+    font: 500 13px var(--font-sans); text-overflow: ellipsis; cursor: pointer; }
+  .select:hover { background: var(--color-bg-hover); }
+  .select option { color: initial; }
+  .divider { width: 1px; height: 20px; margin: 0 var(--space-4); background: var(--color-border-panel); flex: none; }
+  .group-label { padding: 0 6px 0 4px; color: var(--color-text-secondary); font-size: 12px; white-space: nowrap; }
+  .seg { display: inline-flex; gap: var(--space-2); padding: var(--space-2); border-radius: var(--radius-md); background: var(--color-bg-segment); flex: none; }
+  .seg button { height: 28px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--color-text-secondary);
+    font: 400 13px var(--font-sans); white-space: nowrap; cursor: pointer; }
+  .seg button:hover:not(:disabled) { color: var(--color-text-primary); }
+  .seg button.active { background: var(--color-bg-segment-active); color: var(--color-text-primary); font-weight: 500; box-shadow: var(--shadow-control); }
+  .seg button:disabled { opacity: .4; cursor: default; }
+  #zoom { width: 48px; text-align: center; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; flex: none; }
+  .badge { display: inline-flex; align-items: center; gap: var(--space-4); height: 24px; margin: 0 var(--space-4); padding: 0 10px 0 8px;
+    border-radius: var(--radius-full); background: var(--color-bg-hover); color: var(--color-text-secondary); font-size: 12px; white-space: nowrap; }
+  .badge .icon { width: 14px; height: 14px; }
+
+  /* ---------- パネル（Figma: Components / パネル） ---------- */
+  .popover { position: absolute; z-index: 3; right: 16px; top: 66px; display: none; flex-direction: column; gap: var(--space-12);
+    width: min(380px, calc(100% - 32px)); max-height: calc(100% - 66px - 80px); overflow: auto; box-sizing: border-box; padding: var(--space-8) var(--space-16) var(--space-16);
+    border-radius: var(--radius-lg); background: var(--color-bg-popover); border: 1px solid var(--color-border-panel); box-shadow: var(--shadow-popover); }
+  .popover.show { display: flex; }
+  .popover-header { display: flex; align-items: center; justify-content: space-between; margin-right: calc(-1 * var(--space-8)); }
+  .popover h2 { margin: 0; font-size: 13px; font-weight: 600; }
+  .popover h3 { margin: 0 0 var(--space-6); font-size: 12px; font-weight: 400; color: var(--color-text-secondary); }
+  .popover p { margin: 0; color: var(--color-text-secondary); font-size: 12px; line-height: 18px; }
+  .keys { display: grid; grid-template-columns: 116px 1fr; gap: var(--space-6) var(--space-12); margin: 0; }
+  .keys dt { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; }
+  .keys dd { margin: 0; font-size: 12px; line-height: 20px; }
+  kbd { display: inline-block; min-width: 8px; padding: 2px 6px; border-radius: var(--radius-xs); background: var(--color-bg-kbd);
+    color: var(--color-text-primary); font: 500 11px/16px var(--font-sans); text-align: center; white-space: nowrap; }
+  #account { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); padding-top: var(--space-8);
+    border-top: 1px solid var(--color-border-panel); color: var(--color-text-secondary); font-size: 12px; }
+  #account > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #share-panel { width: min(340px, calc(100% - 32px)); }
+  #share-list { display: flex; flex-direction: column; gap: var(--space-2); }
+  #share-list .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+  #share-list .row span { overflow: hidden; text-overflow: ellipsis; }
+  #share-form { display: flex; gap: var(--space-8); }
+  .input { flex: 1; min-width: 0; height: var(--size-control); box-sizing: border-box; padding: 0 10px; border: 0; border-radius: var(--radius-md);
+    background: var(--color-bg-control); box-shadow: inset 0 0 0 1px var(--color-border-control); color: var(--color-text-primary); font: 400 13px var(--font-sans); }
+  .input::placeholder { color: var(--color-text-secondary); }
+  .input:focus { outline: 2px solid var(--color-border-accent); outline-offset: 1px; }
+  .error { color: var(--color-text-danger); font-size: 12px; line-height: 18px; }
+  .error:empty { display: none; }
+
+  /* ---------- ログイン（Figma: Card/Login） ---------- */
+  #login { position: fixed; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center; background: var(--color-bg-canvas); }
+  #login.show { display: flex; }
+  .login-card { display: flex; flex-direction: column; align-items: center; gap: var(--space-12); width: min(320px, calc(100% - 32px)); box-sizing: border-box;
+    padding: var(--space-32) var(--space-32) var(--space-24); border-radius: var(--radius-xl); background: var(--color-bg-popover);
+    border: 1px solid var(--color-border-panel); box-shadow: var(--shadow-popover); text-align: center; }
+  .login-card svg { width: 40px; height: 40px; }
+  .login-card h1 { margin: 0; font-size: 18px; line-height: 26px; font-weight: 600; }
+  .login-card p { margin: 0; color: var(--color-text-secondary); font-size: 12px; }
+  .login-card .btn { align-self: stretch; }
+
+  /* ---------- 狭い画面（Figma: Canvas / Mobile） ---------- */
+  @media (max-width: 880px) {
+    #dock { left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: flex-end; }
+    #zoom-bar { order: 1; }
+    #edit-bar { order: 2; align-self: stretch; overflow-x: auto; scrollbar-width: none; }
+    #edit-bar::-webkit-scrollbar { display: none; }
+    #nav { left: 12px; top: 12px; max-width: calc(100% - 24px - 128px); }
+    #actions { right: 12px; top: 12px; }
+    .popover { right: 12px; top: 62px; width: calc(100% - 24px); }
+    .select { max-width: 160px; }
+  }
 </style>
 </head>
 <body>
+<!-- アイコン（Figma: Components / アイコン と同じ形）。<svg class="icon"><use href="#i-…"/></svg> で使う。 -->
+<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+  <symbol id="i-chevron-down" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 16 16"><path d="M3 8h10"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></symbol>
+  <symbol id="i-help" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25"/><path d="M6.25 6.3a1.8 1.8 0 0 1 3.5.6c0 1.2-1.75 1.5-1.75 2.6M8 11.6v.01"/></symbol>
+  <symbol id="i-share" viewBox="0 0 16 16"><circle cx="6" cy="5.5" r="2.5"/><path d="M1.75 13.5c.6-2.2 2.2-3.4 4.25-3.4s3.65 1.2 4.25 3.4M10.5 3.1a2.5 2.5 0 0 1 0 4.8M12 10.4c1.1.5 1.9 1.5 2.25 3.1"/></symbol>
+  <symbol id="i-file-plus" viewBox="0 0 16 16"><path d="M9 1.75H4.5A1.5 1.5 0 0 0 3 3.25v9.5a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.75zM9 1.75v4h4M8 7.5v4M6 9.5h4"/></symbol>
+  <symbol id="i-board" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke-dasharray="2.5 2"/><path d="M4.5 5.25h4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.75 8S4 3.5 8 3.5 14.25 8 14.25 8 12 12.5 8 12.5 1.75 8 1.75 8z"/><circle cx="8" cy="8" r="2"/></symbol>
+  <symbol id="i-logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#24262d"/><g fill="none" stroke-width="5" stroke-linecap="round"><path d="M28 32H22Q16 32 16 24V18H12" stroke="#e9a21a"/><path d="M36 32H42Q48 32 48 24V16H52" stroke="#3fa34d"/><path d="M36 32H42Q48 32 48 40V48H52" stroke="#7c5cde"/><path d="M28 32H22Q16 32 16 40V46H12" stroke="#e4572e"/></g><rect x="6" y="12" width="14" height="10" rx="4" fill="#e9a21a"/><rect x="44" y="10" width="14" height="10" rx="4" fill="#3fa34d"/><rect x="44" y="44" width="14" height="10" rx="4" fill="#7c5cde"/><rect x="6" y="42" width="14" height="10" rx="4" fill="#e4572e"/><rect x="22" y="22" width="20" height="20" rx="7" fill="#6ea2ff" stroke="#24262d" stroke-width="3"/></symbol>
+</svg>
+
 <svg id="canvas" xmlns="http://www.w3.org/2000/svg">
   <g id="world">
     <g id="boards"></g>
@@ -137,83 +257,118 @@
 <div id="editor" contenteditable="true" spellcheck="false"></div>
 <input id="board-editor" type="text" spellcheck="false" autocomplete="off">
 
-<div id="toolbar" class="hud">
-  <select id="space-select" title="領域を切り替える"></select>
-  <button id="btn-share">共有</button>
-  <span id="readonly-badge">閲覧のみ</span>
-  <span id="space-sep" class="sep"></span>
-  <select id="map-select" title="マップを切り替える"></select>
-  <button id="btn-add-map" class="edit-only">マップを追加</button>
-  <span class="sep edit-only"></span>
-  <button id="btn-new" class="edit-only">新規</button>
-  <button id="btn-add-board" class="edit-only" title="選択中のマップを囲む。選択がなければ画面の真ん中に置く">ボード</button>
-  <span class="sep"></span>
-  <button id="btn-zoom-out">−</button>
-  <span id="zoom">100%</span>
-  <button id="btn-zoom-in">＋</button>
-  <button id="btn-fit">全体を表示</button>
-  <span class="sep edit-only"></span>
-  <span id="layout-group" class="edit-only" style="display: contents">
+<!-- 左上: 移動（Figma: Toolbar/Navigation） -->
+<div id="nav" class="toolbar">
+  <span class="mark" aria-hidden="true"><svg><use href="#i-logo"/></svg></span>
+  <span class="select-wrap" hidden><select id="space-select" class="select" title="領域を切り替える"></select><svg class="icon"><use href="#i-chevron-down"/></svg></span>
+  <span id="space-sep" class="divider" hidden></span>
+  <span class="select-wrap"><select id="map-select" class="select" title="マップを切り替える"></select><svg class="icon"><use href="#i-chevron-down"/></svg></span>
+  <button id="btn-add-map" class="icon-btn edit-only" title="マップを追加" aria-label="マップを追加"><svg class="icon"><use href="#i-plus"/></svg></button>
+</div>
+
+<!-- 右上: 共有とヘルプ（Figma: Toolbar/Actions） -->
+<div id="actions" class="toolbar">
+  <span id="readonly-badge" class="badge" hidden><svg class="icon"><use href="#i-eye"/></svg>閲覧のみ</span>
+  <button id="btn-share" class="btn" aria-expanded="false" hidden><svg class="icon"><use href="#i-share"/></svg>共有</button>
+  <button id="btn-help" class="icon-btn" title="操作" aria-label="操作" aria-expanded="false"><svg class="icon"><use href="#i-help"/></svg></button>
+</div>
+
+<div id="dock">
+  <!-- 下中央: 編集（Figma: Toolbar/Edit） -->
+  <div id="edit-bar" class="toolbar edit-only">
+    <button id="btn-new" class="btn" title="いまのマップを消して、中心ノード1つから始める"><svg class="icon"><use href="#i-file-plus"/></svg>新規</button>
+    <button id="btn-add-board" class="btn" title="選択中のマップを囲む。選択がなければ画面の真ん中に置く"><svg class="icon"><use href="#i-board"/></svg>ボード</button>
+    <span class="divider"></span>
     <span class="group-label">配置</span>
-    <button data-layout="both">両側</button>
-    <button data-layout="right">右</button>
-    <button data-layout="left">左</button>
-  </span>
-  <span class="sep edit-only"></span>
-  <span id="side-group" class="edit-only" style="display: contents">
+    <span id="layout-group" class="seg" role="group" aria-label="配置">
+      <button data-layout="both">両側</button><button data-layout="right">右</button><button data-layout="left">左</button>
+    </span>
+    <span class="divider"></span>
     <span class="group-label">枝</span>
-    <button data-side="left">◀ 左へ</button>
-    <button data-side="right">右へ ▶</button>
-  </span>
-</div>
-
-<div id="share-panel" class="hud">
-  <h2>自分の領域を共有する</h2>
-  <p>指定したアカウントは、この領域のマップを読み取り専用で開けます。</p>
-  <div id="share-list"></div>
-  <form id="share-form">
-    <input id="share-email" type="email" placeholder="メールアドレス" autocomplete="off">
-    <button type="submit">追加</button>
-  </form>
-  <div id="share-error"></div>
-  <button id="btn-share-close" type="button">閉じる</button>
-</div>
-
-<div id="login">
-  <div class="box">
-    <h1>Mind Map</h1>
-    <a href="/api/auth/google/start">Google でログイン</a>
-    <div id="login-error"></div>
+    <span id="side-group" class="seg" role="group" aria-label="枝の向き">
+      <button data-side="left">◀ 左</button><button data-side="right">右 ▶</button>
+    </span>
+  </div>
+  <!-- 右下: 表示（Figma: Toolbar/Zoom） -->
+  <div id="zoom-bar" class="toolbar">
+    <button id="btn-zoom-out" class="icon-btn" title="縮小（⌘−）" aria-label="縮小"><svg class="icon"><use href="#i-minus"/></svg></button>
+    <span id="zoom">100%</span>
+    <button id="btn-zoom-in" class="icon-btn" title="拡大（⌘＋）" aria-label="拡大"><svg class="icon"><use href="#i-plus"/></svg></button>
+    <span class="divider"></span>
+    <button id="btn-fit" class="icon-btn" title="全体を表示（⌘0）" aria-label="全体を表示"><svg class="icon"><use href="#i-fit"/></svg></button>
   </div>
 </div>
 
-<details id="help" class="hud">
-  <summary title="クリックで開閉">操作</summary>
-  <span><kbd>Tab</kbd> 子ノードを追加</span>
-  <span><kbd>Enter</kbd> 兄弟ノードを追加（中心では子）</span>
-  <span>背景を<kbd>ダブルクリック</kbd> 新しい中心ノード</span>
-  <span><kbd>文字キー</kbd> 選択中のノードを書き換え</span>
-  <span><kbd>ダブルクリック</kbd> 文字を編集</span>
-  <span><kbd>Delete</kbd> ノードを削除</span>
-  <span><kbd>⌘X</kbd> <kbd>⌘C</kbd> 子孫ごと切り取り / コピー、<kbd>⌘V</kbd> 選択中のノードの下へ貼り付け</span>
-  <span><kbd>⌘.</kbd> 枝を折りたたむ / 開く（端の丸でも）</span>
-  <span><kbd>矢印</kbd> ノード間を移動</span>
-  <span><kbd>⌘←</kbd> <kbd>⌘→</kbd> 選択中の枝を中心の左 / 右へ</span>
-  <span>ドラッグで並べ替え・中心の左右へ移動、別のノードに重ねて付け替え</span>
-  <span>中心ノードはドラッグで移動（<kbd>Shift</kbd> を押して重ねると付け替え）</span>
-  <span>「ボード」で選択中のマップを囲む区画を作る。名前をドラッグで中のマップごと移動、角で大きさを変える、名前を<kbd>ダブルクリック</kbd>で改名、選んで <kbd>Delete</kbd> でボードだけ消す</span>
-  <span>背景ドラッグ・スクロールで移動、ピンチ / <kbd>⌘</kbd>+スクロールで拡大縮小</span>
-  <span><kbd>⌘Z</kbd> 取り消し　<kbd>⌘0</kbd> 全体を表示</span>
-  <span id="account"><span id="account-email"></span> でログイン中 · <a id="btn-logout">ログアウト</a></span>
-</details>
+<!-- 共有（Figma: Panel/Share） -->
+<div id="share-panel" class="popover" role="dialog" aria-label="共有">
+  <div class="popover-header">
+    <h2>自分の領域を共有する</h2>
+    <button id="btn-share-close" class="icon-btn" type="button" aria-label="閉じる"><svg class="icon"><use href="#i-close"/></svg></button>
+  </div>
+  <p>指定したアカウントは、この領域のマップを読み取り専用で開けます。</p>
+  <div id="share-list"></div>
+  <form id="share-form">
+    <input id="share-email" class="input" type="email" placeholder="メールアドレス" autocomplete="off">
+    <button type="submit" class="btn btn-primary">追加</button>
+  </form>
+  <div id="share-error" class="error"></div>
+</div>
+
+<!-- 操作の一覧（Figma: Panel/Help） -->
+<div id="help-panel" class="popover" role="dialog" aria-label="操作">
+  <div class="popover-header">
+    <h2>操作</h2>
+    <button id="btn-help-close" class="icon-btn" type="button" aria-label="閉じる"><svg class="icon"><use href="#i-close"/></svg></button>
+  </div>
+  <section>
+    <h3>キーボード</h3>
+    <dl class="keys">
+      <dt><kbd>Tab</kbd></dt><dd>子ノードを追加</dd>
+      <dt><kbd>Enter</kbd></dt><dd>兄弟ノードを追加（中心では子）</dd>
+      <dt><kbd>文字キー</kbd></dt><dd>選択中のノードを書き換え</dd>
+      <dt><kbd>Space</kbd></dt><dd>文字を編集</dd>
+      <dt><kbd>Delete</kbd></dt><dd>ノードを子孫ごと削除（ボードはボードだけ）</dd>
+      <dt><kbd>⌘X</kbd><kbd>⌘C</kbd><kbd>⌘V</kbd></dt><dd>子孫ごと切り取り・コピー・選択中の下へ貼り付け</dd>
+      <dt><kbd>⌘.</kbd></dt><dd>枝を折りたたむ / 開く（端の丸でも）</dd>
+      <dt><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></dt><dd>ノード間を移動</dd>
+      <dt><kbd>⌘←</kbd><kbd>⌘→</kbd></dt><dd>選択中の枝を中心の左 / 右へ</dd>
+      <dt><kbd>⌘Z</kbd></dt><dd>取り消し（⇧⌘Z でやり直し）</dd>
+      <dt><kbd>⌘0</kbd></dt><dd>全体を表示</dd>
+    </dl>
+  </section>
+  <section>
+    <h3>マウス</h3>
+    <dl class="keys">
+      <dt><kbd>ダブルクリック</kbd></dt><dd>ノード：文字を編集　背景：新しい中心ノード</dd>
+      <dt><kbd>ドラッグ</kbd></dt><dd>並べ替え・中心の左右へ移動・別のノードに重ねて付け替え</dd>
+      <dt><kbd>⇧ ドラッグ</kbd></dt><dd>中心ノードを別のマップの枝にする</dd>
+      <dt><kbd>ボード</kbd></dt><dd>名前をドラッグで中のマップごと移動、角で大きさを変える、名前をダブルクリックで改名</dd>
+      <dt><kbd>スクロール</kbd></dt><dd>画面を移動（⌘ を押しながら・ピンチで拡大縮小）</dd>
+    </dl>
+  </section>
+  <div id="account" hidden><span><span id="account-email"></span> でログイン中</span><button id="btn-logout" class="btn" type="button">ログアウト</button></div>
+</div>
+
+<div id="login">
+  <div class="login-card">
+    <svg aria-hidden="true"><use href="#i-logo"/></svg>
+    <h1>Mind Map</h1>
+    <p>Google アカウントでログインしてください</p>
+    <a class="btn btn-primary" href="/api/auth/google/start">Google でログイン</a>
+    <div id="login-error" class="error"></div>
+  </div>
+</div>
 
 <script>
 (() => {
   'use strict';
-  const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif';
-  const PALETTE = ['#e4572e', '#e9a21a', '#3fa34d', '#1f9e8f', '#2f6feb', '#7c5cde', '#c63fb5', '#e0456f'];
+  const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Helvetica Neue", sans-serif';
+  // 枝の色。値は CSS の --color-branch-1〜8（Figma の color/branch/1〜8）にあり、ライトとダークで同じ。
+  const PALETTE = [1, 2, 3, 4, 5, 6, 7, 8].map(i => `var(--color-branch-${i})`);
   const MIN_SCALE = 0.1;
+  // 大きさは Figma の size/node・size/root・radius/node・radius/lg と同じ。
   const NODE_H = 34, ROOT_H = 46, PAD = 14, ROOT_PAD = 20, HGAP = 56, VGAP = 14, MIN_W = 44;
+  const NODE_R = 10, ROOT_R = 12, RING_GAP = 2, TOGGLE_H = 16, TOGGLE_GAP = 4;
   const STORAGE_KEY = 'mindmap-v1';
 
   const svg = document.getElementById('canvas');
@@ -417,12 +572,12 @@
     }
     spaceSelect.value = spaceId || '';
     const shared = info.spaces.length > 1, canShare = info.own !== 'local' && !readOnly;
-    spaceSelect.style.display = shared ? 'inline-block' : '';
-    document.getElementById('btn-share').style.display = canShare ? 'inline-block' : '';
+    spaceSelect.parentElement.hidden = !shared;
+    document.getElementById('btn-share').hidden = !canShare;
     const badge = document.getElementById('readonly-badge');
-    badge.style.display = readOnly ? 'inline-block' : '';
+    badge.hidden = !readOnly;
     if (pick) badge.title = `${pick.owner} の領域を閲覧しています`;
-    document.getElementById('space-sep').style.display = shared || canShare || readOnly ? 'inline-block' : '';
+    document.getElementById('space-sep').hidden = !shared;
   }
   // 領域を変えるときは、接続と取り消し履歴ごと開き直す
   function openSpace(id) {
@@ -439,9 +594,9 @@
     box.innerHTML = '';
     if (!list.length) { const p = document.createElement('p'); p.textContent = 'まだ誰にも共有していません'; box.appendChild(p); }
     for (const s of list) {
-      const row = document.createElement('div');
+      const row = document.createElement('div'); row.className = 'row';
       const label = document.createElement('span'); label.textContent = s.email;
-      const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = '外す';
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn'; btn.textContent = '外す';
       btn.addEventListener('click', () => changeShare('DELETE', s.email));
       row.append(label, btn); box.appendChild(row);
     }
@@ -456,10 +611,38 @@
       return true;
     } catch (e) { shareError.textContent = 'サーバーに届きませんでした'; return false; }
   }
-  document.getElementById('btn-share').addEventListener('click', () => {
-    if (sharePanel.classList.toggle('show')) { changeShare('GET'); document.getElementById('share-email').focus(); }
-  });
-  document.getElementById('btn-share-close').addEventListener('click', () => sharePanel.classList.remove('show'));
+  // 右上のパネル（共有・操作）。同じ場所に開くので、出すのは1つだけ。開いているあいだはボタンを aria-expanded にする。
+  // × か、もう一度ボタンを押すか、Esc で閉じる。操作の一覧は開いたままにでき、開いていたかどうかを覚える。
+  const panels = {
+    share: { panel: sharePanel, button: document.getElementById('btn-share') },
+    help: { panel: document.getElementById('help-panel'), button: document.getElementById('btn-help') },
+  };
+  const isOpen = name => panels[name].panel.classList.contains('show');
+  function setPanel(name, open) {
+    const p = panels[name];
+    p.panel.classList.toggle('show', open);
+    p.button.setAttribute('aria-expanded', String(open));
+    if (name === 'help') try { localStorage.setItem('mindmap-help-open', open ? '1' : '0'); } catch (e) { /* 無視 */ }
+  }
+  function togglePanel(name) {
+    const open = !isOpen(name);
+    if (open) for (const k in panels) if (k !== name && isOpen(k)) setPanel(k, false);
+    setPanel(name, open);
+    if (open && name === 'share') { changeShare('GET'); document.getElementById('share-email').focus(); }
+  }
+  function closePanels() {
+    let closed = false;
+    for (const k in panels) if (isOpen(k)) { setPanel(k, false); closed = true; }
+    return closed;
+  }
+  document.getElementById('btn-share').addEventListener('click', () => togglePanel('share'));
+  document.getElementById('btn-share-close').addEventListener('click', () => setPanel('share', false));
+  document.getElementById('btn-help').addEventListener('click', () => togglePanel('help'));
+  document.getElementById('btn-help-close').addEventListener('click', () => setPanel('help', false));
+  // Esc はノードの選択を外す前に、開いているパネルを閉じる。文字の編集中は編集のほうを取りやめる。
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !editingId && !editingBoardId && !e.isComposing && closePanels()) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
   document.getElementById('share-form').addEventListener('submit', async e => {
     e.preventDefault();
     const input = document.getElementById('share-email');
@@ -532,7 +715,7 @@
       const me = await (await fetch('/api/auth/me')).json();
       if (!me.email || !me.email.includes('@')) return;
       document.getElementById('account-email').textContent = me.email;
-      document.getElementById('account').style.display = 'block';
+      document.getElementById('account').hidden = false;
     } catch (e) { /* サーバーなし */ }
   }
   document.getElementById('btn-logout').addEventListener('click', async () => {
@@ -787,7 +970,7 @@
   }
   // 文字の編集中や入力欄、ページの文字を選んでいるときは、ふつうの文字のコピー・貼り付けにする。
   function textClipboard(e) {
-    if (editingId || e.target === mapSelect || (e.target.closest && e.target.closest('input, textarea, #help'))) return true;
+    if (editingId || e.target === mapSelect || (e.target.closest && e.target.closest('input, textarea, .popover'))) return true;
     const s = window.getSelection();
     return !!(s && !s.isCollapsed && !editor.contains(s.anchorNode));
   }
@@ -990,16 +1173,18 @@
     for (const [id, p] of linkEls) if (!nodes.has(id) || !nodes.get(id).parentId) { p.remove(); linkEls.delete(id); }
     for (const n of nodes.values()) {
       if (!nodeEls.has(n.id)) {
+        // ノードは本体の四角、選択のリング（本体の 2px 外側）、文字、折りたたみの印（Figma: Node・Toggle）
         const g = el('g', { class: 'node' }); g.dataset.id = n.id;
-        const rect = el('rect', { rx: 10, ry: 10 });
+        const ring = el('rect', { class: 'sel-ring' });
+        const rect = el('rect', { class: 'body' });
         const text = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
         const toggle = el('g', { class: 'toggle' });
-        const tCircle = el('circle', { r: 8 });
+        const tPill = el('rect', { height: TOGGLE_H, y: -TOGGLE_H / 2, rx: TOGGLE_H / 2, ry: TOGGLE_H / 2 });
         const tDash = el('line', { class: 'dash', x1: -3.5, y1: 0, x2: 3.5, y2: 0 });
         const tText = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
-        toggle.append(tCircle, tDash, tText);
-        g.append(rect, text, toggle); nodesG.appendChild(g);
-        nodeEls.set(n.id, { g, rect, text, toggle, tCircle, tDash, tText });
+        toggle.append(tPill, tDash, tText);
+        g.append(ring, rect, text, toggle); nodesG.appendChild(g);
+        nodeEls.set(n.id, { g, ring, rect, text, toggle, tPill, tDash, tText });
       }
       if (n.parentId && !linkEls.has(n.id)) {
         const p = el('path', { class: 'link' }); linksG.appendChild(p); linkEls.set(n.id, p);
@@ -1043,19 +1228,29 @@
         + (drag && drag.drop && drag.drop.parentId === n.id && !drag.drop.line ? ' drop-target' : '')
         + (n.id === editingId ? ' editing' : '') + (dragOffset(n).x || dragOffset(n).y ? ' dragging' : '')
         + (n.hidden ? ' hidden' : '') + (n.collapsed ? ' collapsed' : ''));
+      const r = isRoot(n) ? ROOT_R : NODE_R, o = RING_GAP + 1; // リングの線（2px）の中心は、本体の外側 3px
       e.rect.setAttribute('width', n.w); e.rect.setAttribute('height', n.h);
+      e.rect.setAttribute('rx', r); e.rect.setAttribute('ry', r);
+      e.ring.setAttribute('x', -o); e.ring.setAttribute('y', -o);
+      e.ring.setAttribute('width', n.w + o * 2); e.ring.setAttribute('height', n.h + o * 2);
+      e.ring.setAttribute('rx', r + o); e.ring.setAttribute('ry', r + o);
       if (color) e.rect.style.stroke = color; else e.rect.style.stroke = '';
       e.text.setAttribute('x', n.w / 2); e.text.setAttribute('y', n.h / 2);
       if (e.text.textContent !== n.text) e.text.textContent = n.text;
       if (n.parentId && n.children.length) {
         const p = nodes.get(n.parentId);
         const d = p.cx <= n.cx ? 1 : -1;
+        // 閉じているときは子孫の数を入れる。2桁からは横に伸びる丸にする
+        const label = n.collapsed ? String(descendantCount(n)) : '';
+        meas.font = '700 11px ' + FONT_FAMILY;
+        const pw = label ? Math.max(TOGGLE_H, Math.ceil(meas.measureText(label).width) + 8) : TOGGLE_H;
         e.toggle.style.display = '';
-        e.toggle.setAttribute('transform', `translate(${d === 1 ? n.w + 12 : -12},${n.h / 2})`);
-        e.tCircle.style.stroke = color; e.tDash.style.stroke = color;
+        e.toggle.setAttribute('transform', `translate(${d === 1 ? n.w + TOGGLE_GAP + pw / 2 : -TOGGLE_GAP - pw / 2},${n.h / 2})`);
+        e.tPill.setAttribute('x', -pw / 2); e.tPill.setAttribute('width', pw);
+        e.tPill.style.stroke = color; e.tDash.style.stroke = color;
         e.g.style.setProperty('--toggle-fill', color);
-        if (n.collapsed) { e.tDash.style.display = 'none'; e.tText.textContent = String(descendantCount(n)); }
-        else { e.tDash.style.display = ''; e.tText.textContent = ''; }
+        e.tDash.style.display = n.collapsed ? 'none' : '';
+        if (e.tText.textContent !== label) e.tText.textContent = label;
       } else e.toggle.style.display = 'none';
       if (n.parentId) {
         const p = nodes.get(n.parentId), path = linkEls.get(n.id);
@@ -1064,7 +1259,7 @@
         const x1 = p.vx + d * p.w / 2, y1 = p.vy, x2 = n.vx - d * n.w / 2, y2 = n.vy;
         const mx = (x1 + x2) / 2;
         path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
-        path.setAttribute('stroke', color);
+        path.style.stroke = color;
         path.setAttribute('stroke-width', Math.max(1.5, 5 - n.depth * 1.2));
       }
     }
@@ -1361,7 +1556,7 @@
     requestDraw();
   }
   window.addEventListener('keydown', e => {
-    if (e.target === mapSelect || e.target === spaceSelect || (e.target.closest && e.target.closest('#help, #share-panel'))) return;
+    if (e.target === mapSelect || e.target === spaceSelect || (e.target.closest && e.target.closest('.popover'))) return;
     const meta = e.metaKey || e.ctrlKey;
     if (editingId) {
       // 日本語入力の変換中や確定の Enter・Esc・Tab は IME に任せる。Safari は確定の Enter で isComposing が false になるので keyCode も見る
@@ -1426,13 +1621,8 @@
   for (const b of sideButtons) b.addEventListener('click', () => selectedId && setSide(selectedId, b.dataset.side));
   document.querySelectorAll('button').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
   window.addEventListener('resize', requestDraw);
-  // 操作の一覧は開閉できる。閉じた状態を既定にし、開いたかどうかを覚える。
-  const help = document.getElementById('help');
-  try { help.open = localStorage.getItem('mindmap-help-open') === '1'; } catch (e) { /* 無視 */ }
-  help.addEventListener('toggle', () => {
-    try { localStorage.setItem('mindmap-help-open', help.open ? '1' : '0'); } catch (e) { /* 無視 */ }
-    help.querySelector('summary').blur();
-  });
+  // 操作の一覧は、前に開いたままにしていたら開いて始める（既定は閉じる）。
+  try { if (localStorage.getItem('mindmap-help-open') === '1') setPanel('help', true); } catch (e) { /* 無視 */ }
 
   // ---------- 起動 ----------
   loadSpaces().then(loadInitial).then(data => {

@@ -37,7 +37,7 @@ node cli.ts share remove someone@example.com
 ## マップは複数ある
 
 マップは名前で区別します。画面と CLI は「今選んでいるマップ」を対象にします。
-画面のツールバー左端のセレクトと CLI の `use` は同じ選択を動かすので、人が画面で切り替えればエージェントの対象も変わり、逆も同じです。
+画面の左上のセレクトと CLI の `use` は同じ選択を動かすので、人が画面で切り替えればエージェントの対象も変わり、逆も同じです。
 
 ```sh
 node cli.ts maps                       # 一覧。* が今選んでいるマップ
@@ -131,6 +131,7 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 
 ## 中身（変更するとき）
 
+- 画面のデザインは Figma の [Mind Map — UI](https://www.figma.com/design/qOSm5azBhDhv6g30qS23aS) が正。色・余白・角丸は Figma の変数と同じ名前の CSS 変数（`:root` の `--color-*`・`--space-*`・`--radius-*`）だけを使い、値を直接書かない。画面を変えるときは Figma の Screens と Components を先に直す（Figma の MCP で読み書きできる）。
 - `public/index.html`: ページ。1ファイルで依存なし。読み書きは `/api/map`（版番号つき）、変更は `/api/ws`（WebSocket）で受ける。共有された領域は `?space=` を付けて開き、閲覧のみになる。
 - `src/worker.ts`: 入口。ページは静的アセット（`public/`）が配る。`/api/` は、名簿 `main` で権限を確かめてから、領域の Durable Object へ渡す。
 - `src/auth.ts`: Google ログイン（ブラウザ）と API トークン（CLI）の確認。セッションはアカウント ID を持つ。名簿 `main` の中で動く。
