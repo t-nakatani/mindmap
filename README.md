@@ -107,6 +107,7 @@ CLI は `~/.config/mindmap/env` に `MINDMAP_URL` と `MINDMAP_TOKEN`（`API_TOK
 - CLI からの変更は WebSocket で即時に反映され、⌘Z で取り消せる。接続が切れたらつなぎ直し、その間の変更を取り込む。
 - 保存は版番号つき。別の場所で先に書かれていたら上書きせず、サーバーの最新を取り込む（自分の変更は ⌘Z で戻せる）。
 - サーバーがないときは localStorage だけに保存して動く。
+- ノードにリンク（URL）を付けられる。URL を貼る（⌘V）と選択中のノードの下にリンクのノードができ、⌘K か下のツールバーの「リンク」で選択中のノードに付ける・直す。ノードに URL だけを打っても、リンクになる。リンクのノードは、ページの題名・アイコン・ドメインのカードに展開され、↗ か ⌘Enter で新しいタブに開く。リンクのノードを選ぶと、横に説明と画像つきのパネルが出る。題名はサーバーがページを読みに行って入れる（文字が空のときだけ）。
 - 操作の一覧は右上の ? で開く。開いたままにしておくと、次に開いたときも開いている。
 
 ## デザイン
@@ -124,8 +125,9 @@ CLI は `~/.config/mindmap/env` に `MINDMAP_URL` と `MINDMAP_TOKEN`（`API_TOK
 - `src/worker.ts`: 入口。`/api/` を、名簿 `main` で権限を確かめてから領域の Durable Object へ渡す。
 - `src/auth.ts`: Google ログインとセッション、API トークンの確認。名簿 `main` の中で動く。
 - `src/directory.ts`: 名簿の表。アカウント・領域・共有と、領域を分ける前のマップの移し替えに使う行。
-- `src/store.ts`: Durable Object。名簿 `main`（`GET /api/spaces`、`GET/POST/DELETE /api/shares`）と、領域 `space:<領域ID>` の2つの役で使う。領域は全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）。書き込みは同期の SQL だけで行うので、順に処理される。
-- `lib/map.ts` と `lib/ops.ts`: 名前・ID・経路でノードを指して追加・改名・移動・削除・折りたたみ、Markdown の箇条書きの取り込みと書き出し。Durable Object と CLI が共有する。
+- `src/store.ts`: Durable Object。名簿 `main`（`GET /api/spaces`、`GET/POST/DELETE /api/shares`）と、領域 `space:<領域ID>` の2つの役で使う。領域は全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）、`GET /api/unfurl?url=`（リンクの題名など。領域ごとに1週間覚えておく）。書き込みは同期の SQL だけで行うので、順に処理される。リンクの題名を読み込む操作は、マップを読む前にページを取りに行く。
+- `src/unfurl.ts`: リンクの展開。ページの `<head>` だけを読み（5 秒・512KB まで）、og:title・`<title>`・og:site_name・説明・og:image・アイコンを返す。
+- `lib/map.ts` と `lib/ops.ts`: 名前・ID・経路でノードを指して追加・改名・移動・削除・折りたたみ・リンク、Markdown の箇条書きの取り込みと書き出し（リンクは `[文字](URL)`）。Durable Object と CLI が共有する。
 - `cli.ts`: API を呼ぶ CLI。
 
 ## まだないもの

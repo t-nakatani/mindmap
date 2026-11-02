@@ -1,10 +1,10 @@
 // 名前・ID・経路で指した操作を、マップ1つに当てる。Durable Object が書き込みのたびに呼ぶ。
 // 名前の解決も同じ場所で行うので、解決と書き込みの間に別の書き込みが割り込まない。
 import { roots, resolve, pathOf, addChild, addRoot, removeNode, moveNode, makeRoot, setLayout, setSide, LAYOUTS,
-  parseOutline, addTree, addRoots, subtree } from './map.ts';
+  parseOutline, addTree, addRoots, subtree, cleanUrl, hostOf, fillLinkTitles, untitledUrls } from './map.ts';
 import type { MindMap, MapNode } from './map.ts';
 
-export const OPS = ['add', 'rename', 'move', 'remove', 'layout', 'side', 'collapse', 'expand', 'import'] as const;
+export const OPS = ['add', 'rename', 'move', 'remove', 'layout', 'side', 'collapse', 'expand', 'import', 'link', 'unlink'] as const;
 export type OpName = typeof OPS[number];
 
 /** 操作の引数。CLI のオプションと同じ名前にしてある。 */
@@ -17,6 +17,10 @@ export interface OpArgs {
   replace?: boolean;
   mode?: string;
   side?: string;
+  /** リンク先。add では文字に URL だけを書いてもよい。 */
+  url?: string;
+  /** サーバーが先に読み込んだページの題名（URL → 題名）。文字の空いたリンクに入れる。CLI からは送らない。 */
+  titles?: Record<string, string>;
 }
 export interface OpResult {
   message: string;
@@ -45,11 +49,35 @@ function afterOf(map: MindMap, a: OpArgs, parent: MapNode): MapNode | null {
   return after;
 }
 
+function needUrl(v: string | undefined): string {
+  const u = cleanUrl(need(v, 'URL'));
+  if (!u) throw new Error(`URL は http:// か https:// で始めてください: ${v}`);
+  return u;
+}
+/** add の文字とリンク。--url があればそれ、無くて文字が URL だけならそれをリンクにする。文字が空なら題名を入れる。 */
+function addText(a: OpArgs): { text: string; url?: string } {
+  const url = a.url ? needUrl(a.url) : cleanUrl(a.text ?? '') ?? undefined;
+  const text = a.url ? (a.text ?? '').trim() : url ? '' : String(need(a.text, '文字'));
+  if (!url) return { text };
+  return { text: text || a.titles?.[url] || hostOf(url), url };
+}
+
+/** 操作の前に題名を読み込んでおく URL。Durable Object が、マップを読む前に取りに行く。 */
+export function urlsToTitle(op: string, a: OpArgs = {}): string[] {
+  try {
+    if (op === 'add') { const u = a.url ? cleanUrl(a.url) : cleanUrl(a.text ?? ''); return u && !(a.url && a.text) ? [u] : []; }
+    if (op === 'link') { const u = cleanUrl(a.url ?? ''); return u ? [u] : []; }
+    if (op === 'import') return untitledUrls(parseOutline(String(a.text ?? '')).trees).slice(0, 30);
+  } catch { /* 読めない箇条書きは、当てるときにエラーにする */ }
+  return [];
+}
+
 /** map を直接書き換え、結果の文を返す。map が null でよいのは import --replace だけ。 */
 export function applyOp(map: MindMap | null, op: string, a: OpArgs = {}): OpResult {
   if (op === 'import' && a.replace) {
     const { trees } = parseOutline(String(need(a.text, '箇条書き')));
     if (!trees.length) throw new Error('取り込む項目がありません');
+    fillLinkTitles(trees, a.titles);
     const fresh: MindMap = { uid: 1, nodes: [] };
     const count = addRoots(fresh, trees);
     return { message: `取り込み: ${count} 件 → 新しい中心ノード`, map: fresh };
@@ -57,14 +85,28 @@ export function applyOp(map: MindMap | null, op: string, a: OpArgs = {}): OpResu
   if (!map) throw new Error('マップがありません');
   switch (op) {
     case 'add': {
-      const text = need(a.text, '文字');
+      const { text, url } = addText(a);
+      const link = url ? `（リンク: ${url}）` : '';
       if (a.root) {
-        const n = addRoot(map, text);
-        return { message: `追加: ${n.text} (${n.id}) を新しい中心ノードとして`, id: n.id };
+        const n = addRoot(map, text, url);
+        return { message: `追加: ${n.text} (${n.id}) を新しい中心ノードとして${link}`, id: n.id };
       }
       const parent = a.under ? resolve(map, a.under) : defaultParent(map);
-      const n = addChild(map, parent, text, { after: afterOf(map, a, parent) });
-      return { message: `追加: ${n.text} (${n.id}) ← ${pathOf(map, parent)}`, id: n.id };
+      const n = addChild(map, parent, text, { after: afterOf(map, a, parent), url });
+      return { message: `追加: ${n.text} (${n.id}) ← ${pathOf(map, parent)}${link}`, id: n.id };
+    }
+    case 'link': {
+      const n = resolve(map, need(a.node, 'ノード'));
+      const url = needUrl(a.url);
+      n.url = url;
+      if (!n.text.trim()) n.text = a.titles?.[url] || hostOf(url);
+      return { message: `リンク: ${n.text} (${n.id}) → ${url}`, id: n.id };
+    }
+    case 'unlink': {
+      const n = resolve(map, need(a.node, 'ノード'));
+      if (!n.url) throw new Error(`${n.text} (${n.id}) にはリンクがありません`);
+      const before = n.url; delete n.url;
+      return { message: `リンクを外す: ${n.text} (${n.id})、${before}`, id: n.id };
     }
     case 'rename': {
       const n = resolve(map, need(a.node, 'ノード'));
@@ -105,6 +147,7 @@ export function applyOp(map: MindMap | null, op: string, a: OpArgs = {}): OpResu
     }
     case 'import': {
       const { trees, headed } = parseOutline(String(need(a.text, '箇条書き')));
+      fillLinkTitles(trees, a.titles);
       if (a.root || (!a.under && headed)) {
         const count = addRoots(map, trees);
         return { message: `取り込み: ${count} 件 → 新しい中心ノード` };

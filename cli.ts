@@ -33,6 +33,11 @@ const USAGE = `使い方: node cli.ts <コマンド> [引数] [オプション]
   add <文字> --under <ノード> [--after <ノード>]
                                        子ノードを足す。--after で兄弟の後ろに入れる
   add <文字> --root                    新しい中心ノード（独立したマップ）を足す
+  add <URL> --under <ノード>           リンクのノードを足す。文字はページの題名を読み込んで入れる
+  add <文字> --url <URL> --under <ノード>
+                                       文字を決めてリンクのノードを足す
+  link <ノード> <URL>                  ノードにリンクを付ける・付け替える（文字はそのまま。空なら題名を入れる）
+  unlink <ノード>                      リンクを外す
   rename <ノード> <文字>               名前を変える
   move <ノード> --under <ノード> [--after <ノード>]
                                        別の親の下へ移す（子ごと）
@@ -57,6 +62,7 @@ const USAGE = `使い方: node cli.ts <コマンド> [引数] [オプション]
 --space <領域ID> で、共有された領域を読める（maps・show・export だけ。省くと自分の領域）。
 中心ノードは複数置ける。それぞれが独立したマップになる。
 --under を省くと、中心ノードが1つのときはその下に入る。複数あるときは --under か --root が必要。
+リンクは show で「リンク:URL」、export と import では「[文字](URL)」か URL だけの行になる。
 ノードの指定: ID（n12）、完全一致の名前、または「中心/予算/人件費」のような経路（中心は省ける）。
 名前が複数あるときは ID か経路で指定する。
 
@@ -66,13 +72,13 @@ const USAGE = `使い方: node cli.ts <コマンド> [引数] [オプション]
                                トークンは OWNER_EMAIL の人として動き、その人の領域を読み書きする
   MINDMAP_MAP                  既定のマップ名（省くと use で選んだもの）`;
 
-type Opts = { under?: string; after?: string; map?: string; space?: string; replace?: boolean; root?: boolean; help?: boolean };
+type Opts = { under?: string; after?: string; map?: string; space?: string; url?: string; replace?: boolean; root?: boolean; help?: boolean };
 
 function parseArgs(argv: string[]) {
   const pos: string[] = [], opt: Opts = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--under' || a === '--after' || a === '--map' || a === '--space') opt[a.slice(2) as 'under' | 'after' | 'map' | 'space'] = argv[++i];
+    if (a === '--under' || a === '--after' || a === '--map' || a === '--space' || a === '--url') opt[a.slice(2) as 'under' | 'after' | 'map' | 'space' | 'url'] = argv[++i];
     else if (a === '--replace' || a === '--root' || a === '--help') opt[a.slice(2) as 'replace' | 'root' | 'help'] = true;
     else if (a === '-h') opt.help = true;
     else pos.push(a);
@@ -204,7 +210,11 @@ async function main() {
       return;
     }
     case 'add':
-      return op(mapName, 'add', { text: need(pos[1], '文字'), under: opt.under, after: opt.after, root: opt.root });
+      return op(mapName, 'add', { text: opt.url ? pos[1] : need(pos[1], '文字か URL'), url: opt.url, under: opt.under, after: opt.after, root: opt.root });
+    case 'link':
+      return op(mapName, 'link', { node: need(pos[1], 'ノード'), url: need(pos[2], 'URL') });
+    case 'unlink':
+      return op(mapName, 'unlink', { node: need(pos[1], 'ノード') });
     case 'rename':
       return op(mapName, 'rename', { node: need(pos[1], 'ノード'), text: need(pos[2], '新しい文字') });
     case 'move':

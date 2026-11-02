@@ -101,7 +101,16 @@
   #insert-line { stroke: var(--color-border-accent); stroke-width: 4; stroke-linecap: round; display: none; }
   .node text { fill: var(--color-text-primary); font-size: 15px; pointer-events: none; user-select: none; font-family: var(--font-sans); }
   .node.root text { font-size: 18px; font-weight: 600; }
-  .node.editing text { visibility: hidden; }
+  .node.editing .label, .node.editing .link-title { visibility: hidden; }
+  /* リンクのノード（Figma: Node / Type=Link）。アイコンの台・題名と ↗・ドメインの2段 */
+  .node:not(.is-link) .link-parts, .node.is-link .label { display: none; }
+  .node .fav-tile { fill: var(--color-bg-hover); }
+  .node .fav-globe { color: var(--color-text-secondary); }
+  .node .fav-globe, .node .link-open use { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .node .link-title { fill: var(--color-text-link); }
+  .node .link-meta, .node.root .link-meta { fill: var(--color-text-secondary); font-size: 12px; font-weight: 400; }
+  .node .link-open { color: var(--color-text-link); cursor: pointer; }
+  .node .link-open:hover use { stroke-width: 2.25; }
   .node.hidden, .link.hidden { display: none; }
   .toggle { cursor: pointer; }
   .toggle rect { fill: var(--color-bg-node); stroke-width: 1.5; }
@@ -195,6 +204,24 @@
     border-top: 1px solid var(--color-border-panel); color: var(--color-text-secondary); font-size: 12px; }
   #account > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #share-panel { width: min(340px, calc(100% - 32px)); }
+  /* リンクのパネル（Figma: Panel/Link・Panel/Link edit）。ノードのそばに出すので、位置は transform で決める */
+  #link-panel, #link-edit { left: 0; top: 0; right: auto; z-index: 2; width: min(340px, calc(100% - 16px)); max-height: none;
+    padding: var(--space-12) var(--space-12) var(--space-8); gap: var(--space-8); }
+  #link-edit { padding-bottom: var(--space-12); }
+  .link-preview { display: flex; gap: var(--space-12); }
+  .link-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+  .link-site { display: flex; align-items: center; gap: var(--space-6); min-width: 0; color: var(--color-text-secondary); font-size: 12px; line-height: 18px; }
+  .link-site img { width: 16px; height: 16px; border-radius: var(--radius-xs); flex: none; }
+  .link-site span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .link-heading, .link-desc { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+  .link-heading { font-size: 13px; line-height: 18px; font-weight: 600; }
+  .link-desc { color: var(--color-text-secondary); font-size: 12px; line-height: 18px; }
+  .link-desc:empty { display: none; }
+  .link-thumb { width: 64px; height: 64px; flex: none; border-radius: var(--radius-md); object-fit: cover; background: var(--color-bg-hover); }
+  .link-url { color: var(--color-text-link); font-size: 12px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
+  .link-url:hover { text-decoration: underline; }
+  .link-actions { display: flex; gap: var(--space-2); padding-top: var(--space-6); border-top: 1px solid var(--color-border-panel); }
+  .link-edit-actions { display: flex; justify-content: flex-end; gap: var(--space-8); }
   #share-list { display: flex; flex-direction: column; gap: var(--space-2); }
   #share-list .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
   #share-list .row span { overflow: hidden; text-overflow: ellipsis; }
@@ -242,6 +269,11 @@
   <symbol id="i-file-plus" viewBox="0 0 16 16"><path d="M9 1.75H4.5A1.5 1.5 0 0 0 3 3.25v9.5a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.75zM9 1.75v4h4M8 7.5v4M6 9.5h4"/></symbol>
   <symbol id="i-board" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke-dasharray="2.5 2"/><path d="M4.5 5.25h4"/></symbol>
   <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
+  <symbol id="i-link" viewBox="0 0 16 16"><path d="M6.6 9.4l2.8-2.8M7.2 4.6l.9-.9a2.75 2.75 0 0 1 3.9 3.9l-.9.9M8.8 11.4l-.9.9a2.75 2.75 0 0 1-3.9-3.9l.9-.9"/></symbol>
+  <symbol id="i-unlink" viewBox="0 0 16 16"><path d="M7.2 4.6l.9-.9a2.75 2.75 0 0 1 3.9 3.9l-.9.9M8.8 11.4l-.9.9a2.75 2.75 0 0 1-3.9-3.9l.9-.9M2.5 2.5l11 11"/></symbol>
+  <symbol id="i-external" viewBox="0 0 16 16"><path d="M9.5 2.5h4v4M13.5 2.5L8 8M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.7 1.7 2.6 3.8 2.6 6.25S9.7 12.55 8 14.25C6.3 12.55 5.4 10.45 5.4 8S6.3 3.45 8 1.75z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 16 16"><path d="M10.6 2.6l2.8 2.8L6 12.8H3.2V10z"/></symbol>
   <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.75 8S4 3.5 8 3.5 14.25 8 14.25 8 12 12.5 8 12.5 1.75 8 1.75 8z"/><circle cx="8" cy="8" r="2"/></symbol>
   <symbol id="i-logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#24262d"/><g fill="none" stroke-width="5" stroke-linecap="round"><path d="M28 32H22Q16 32 16 24V18H12" stroke="#e9a21a"/><path d="M36 32H42Q48 32 48 24V16H52" stroke="#3fa34d"/><path d="M36 32H42Q48 32 48 40V48H52" stroke="#7c5cde"/><path d="M28 32H22Q16 32 16 40V46H12" stroke="#e4572e"/></g><rect x="6" y="12" width="14" height="10" rx="4" fill="#e9a21a"/><rect x="44" y="10" width="14" height="10" rx="4" fill="#3fa34d"/><rect x="44" y="44" width="14" height="10" rx="4" fill="#7c5cde"/><rect x="6" y="42" width="14" height="10" rx="4" fill="#e4572e"/><rect x="22" y="22" width="20" height="20" rx="7" fill="#6ea2ff" stroke="#24262d" stroke-width="3"/></symbol>
 </svg>
@@ -278,6 +310,7 @@
   <div id="edit-bar" class="toolbar edit-only">
     <button id="btn-new" class="btn" title="いまのマップを消して、中心ノード1つから始める"><svg class="icon"><use href="#i-file-plus"/></svg>新規</button>
     <button id="btn-add-board" class="btn" title="選択中のマップを囲む。選択がなければ画面の真ん中に置く"><svg class="icon"><use href="#i-board"/></svg>ボード</button>
+    <button id="btn-link" class="btn" title="選択中のノードにリンクを付ける（⌘K）"><svg class="icon"><use href="#i-link"/></svg>リンク</button>
     <span class="divider"></span>
     <span class="group-label">配置</span>
     <span id="layout-group" class="seg" role="group" aria-label="配置">
@@ -298,6 +331,39 @@
     <button id="btn-fit" class="icon-btn" title="全体を表示（⌘0）" aria-label="全体を表示"><svg class="icon"><use href="#i-fit"/></svg></button>
   </div>
 </div>
+
+<!-- リンクのパネル（Figma: Panel/Link）。リンクのノードを1つ選ぶと、その外側に出る -->
+<div id="link-panel" class="popover" role="dialog" aria-label="リンク">
+  <div class="link-preview">
+    <div class="link-text">
+      <div class="link-site"><img id="lp-icon" alt="" referrerpolicy="no-referrer"><span id="lp-site"></span></div>
+      <div id="lp-title" class="link-heading"></div>
+      <div id="lp-desc" class="link-desc"></div>
+    </div>
+    <img id="lp-image" class="link-thumb" alt="" referrerpolicy="no-referrer">
+  </div>
+  <a id="lp-url" class="link-url" target="_blank" rel="noopener noreferrer"></a>
+  <div class="link-actions">
+    <button id="lp-open" class="btn" type="button" title="新しいタブで開く（⌘Enter）"><svg class="icon"><use href="#i-external"/></svg>開く</button>
+    <button id="lp-edit" class="btn edit-only" type="button" title="リンクを直す（⌘K）"><svg class="icon"><use href="#i-edit"/></svg>編集</button>
+    <button id="lp-unlink" class="btn edit-only" type="button"><svg class="icon"><use href="#i-unlink"/></svg>外す</button>
+  </div>
+</div>
+
+<!-- リンクを付ける・直す（Figma: Panel/Link edit）。⌘K -->
+<form id="link-edit" class="popover" role="dialog" aria-label="リンクを付ける">
+  <div class="popover-header">
+    <h2>リンク</h2>
+    <button id="le-close" class="icon-btn" type="button" aria-label="閉じる"><svg class="icon"><use href="#i-close"/></svg></button>
+  </div>
+  <input id="le-url" class="input" type="text" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+  <p>URL を貼ると、ページの題名とアイコンを読み込んで、カードに展開します。</p>
+  <div id="le-error" class="error"></div>
+  <div class="link-edit-actions">
+    <button id="le-unlink" class="btn" type="button"><svg class="icon"><use href="#i-unlink"/></svg>外す</button>
+    <button class="btn btn-primary" type="submit">リンクする</button>
+  </div>
+</form>
 
 <!-- 共有（Figma: Panel/Share） -->
 <div id="share-panel" class="popover" role="dialog" aria-label="共有">
@@ -328,6 +394,9 @@
       <dt><kbd>文字キー</kbd></dt><dd>選択中のノードを書き換え</dd>
       <dt><kbd>Space</kbd></dt><dd>文字を編集</dd>
       <dt><kbd>Delete</kbd></dt><dd>ノードを子孫ごと削除（ボードはボードだけ）</dd>
+      <dt><kbd>⌘K</kbd></dt><dd>選択中のノードにリンクを付ける・直す</dd>
+      <dt><kbd>⌘Enter</kbd></dt><dd>リンクを開く（ノードの ↗ でも）</dd>
+      <dt><kbd>⌘V</kbd></dt><dd>URL を貼ると、選択中の下にリンクのノードを足す</dd>
       <dt><kbd>⌘X</kbd><kbd>⌘C</kbd><kbd>⌘V</kbd></dt><dd>子孫ごと切り取り・コピー・選択中の下へ貼り付け</dd>
       <dt><kbd>⌘.</kbd></dt><dd>枝を折りたたむ / 開く（端の丸でも）</dd>
       <dt><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></dt><dd>ノード間を移動</dd>
@@ -369,6 +438,11 @@
   // 大きさは Figma の size/node・size/root・radius/node・radius/lg と同じ。
   const NODE_H = 34, ROOT_H = 46, PAD = 14, ROOT_PAD = 20, HGAP = 56, VGAP = 14, MIN_W = 44;
   const NODE_R = 10, ROOT_R = 12, RING_GAP = 2, TOGGLE_H = 16, TOGGLE_GAP = 4;
+  // リンクのノード（Figma: Node / Type=Link・Root link）。高さ 52（中心は 60）、題名は 280px で切る。
+  const LINK_H = 52, ROOT_LINK_H = 60, LINK_TITLE_MAX = 280;
+  const LINK_BOX = { padL: 10, padR: 14, tile: 24, gap: 10, titleY: 18, metaY: 36 };
+  const ROOT_LINK_BOX = { padL: 12, padR: 20, tile: 28, gap: 12, titleY: 22, metaY: 42 };
+  const linkBox = n => isRoot(n) ? ROOT_LINK_BOX : LINK_BOX;
   const STORAGE_KEY = 'mindmap-v1';
 
   const svg = document.getElementById('canvas');
@@ -381,6 +455,7 @@
   const editor = document.getElementById('editor');
   const zoomLabel = document.getElementById('zoom');
   const layoutButtons = [...document.querySelectorAll('#layout-group button')];
+  const linkButton = document.getElementById('btn-link');
   const sideButtons = [...document.querySelectorAll('#side-group button')];
   const meas = document.createElement('canvas').getContext('2d');
   const vw = () => svg.getBoundingClientRect().width;
@@ -414,7 +489,7 @@
     return { uid, nodes: [...nodes.values()].map(n => ({
       id: n.id, text: n.text, parentId: n.parentId, children: n.children.slice(), side: n.side,
       layout: isRoot(n) ? layoutOf(n) : undefined,
-      dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed })),
+      dx: n.dx, dy: n.dy, colorIndex: n.colorIndex, collapsed: n.collapsed, url: n.url || undefined })),
       boards: boards.map(b => ({ id: b.id, name: b.name, x: b.x, y: b.y, w: b.w, h: b.h })) };
   }
   // 古い形式を、いまの形式に直す。中心ノードが1つだった頃の rootId と rootPos を中心ノードの位置に移し、
@@ -428,6 +503,7 @@
     if (data) for (const d of data.nodes) {
       if (d.parentId) { d.dx = 0; d.dy = 0; }
       delete d.pinned;
+      if (d.url !== undefined) { const u = cleanUrl(d.url); if (u) d.url = u; else delete d.url; }
     }
     return data;
   }
@@ -437,7 +513,7 @@
     nodes = new Map();
     for (const d of data.nodes) {
       const n = makeNode(d.text, d.parentId);
-      Object.assign(n, { id: d.id, children: d.children.slice(), side: d.side, dx: d.dx, dy: d.dy, colorIndex: d.colorIndex, collapsed: !!d.collapsed, layout: d.layout });
+      Object.assign(n, { id: d.id, children: d.children.slice(), side: d.side, dx: d.dx, dy: d.dy, colorIndex: d.colorIndex, collapsed: !!d.collapsed, layout: d.layout, url: d.url || undefined });
       nodes.set(n.id, n);
     }
     uid = data.uid;
@@ -641,7 +717,7 @@
   document.getElementById('btn-help-close').addEventListener('click', () => setPanel('help', false));
   // Esc はノードの選択を外す前に、開いているパネルを閉じる。文字の編集中は編集のほうを取りやめる。
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !editingId && !editingBoardId && !e.isComposing && closePanels()) { e.preventDefault(); e.stopImmediatePropagation(); }
+    if (e.key === 'Escape' && !editingId && !editingBoardId && !e.isComposing && (closeLinkEditor() || closePanels())) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
   document.getElementById('share-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -792,7 +868,7 @@
   }
 
   // ---------- 変更操作 ----------
-  function commit() { save(); layout(); syncDom(); requestDraw(); }
+  function commit() { fillLinkTitles(); save(); layout(); syncDom(); requestDraw(); }
 
   function addChild(parentId, text = '') {
     const p = nodes.get(parentId); if (!p || readOnly) return;
@@ -878,20 +954,21 @@
   // ---------- 切り取り・コピー・貼り付け ----------
   // ノードは子孫ごと写す。クリップボードには箇条書き（CLI の import と同じ形）を書き、ほかのアプリやタブへも貼れる。
   // 同じページの中では、折りたたみや枝の左右も持った木（clip）を使うので、マップを切り替えてもそのまま移せる。
-  let clip = null; // { text, trees: [{ text, root, layout, side, colorIndex, collapsed, children }] }
+  let clip = null; // { text, trees: [{ text, url, root, layout, side, colorIndex, collapsed, children }] }
   function snapshot(n) {
-    return { text: n.text, root: isRoot(n), layout: isRoot(n) ? layoutOf(n) : undefined, side: n.side, colorIndex: n.colorIndex,
+    return { text: n.text, url: n.url, root: isRoot(n), layout: isRoot(n) ? layoutOf(n) : undefined, side: n.side, colorIndex: n.colorIndex,
       collapsed: n.collapsed, children: n.children.map(id => snapshot(nodes.get(id))) };
   }
   function toOutline(trees) {
     const lines = [];
-    const walk = (it, d) => { lines.push('  '.repeat(d) + '- ' + it.text); for (const c of it.children) walk(c, d + 1); };
+    const walk = (it, d) => { lines.push('  '.repeat(d) + '- ' + linkText(it)); for (const c of it.children) walk(c, d + 1); };
     for (const t of trees) {
-      if (t.root) { lines.push('# ' + t.text); for (const c of t.children) walk(c, 0); } else walk(t, 0);
+      if (t.root) { lines.push('# ' + linkText(t)); for (const c of t.children) walk(c, 0); } else walk(t, 0);
     }
     return lines.join('\n') + '\n';
   }
   // 貼られた文字を木の並びに読む。インデントが階層、「# 見出し」は中心ノード。箇条書きの記号がない行もそのまま項目にする。
+  // 「[文字](URL)」と URL だけの行はリンクのノードになる（URL だけなら、題名を読み込んで文字にする）。
   function parseOutline(text) {
     const trees = [];
     let stack = [{ indent: -1, children: trees }];
@@ -899,13 +976,13 @@
       if (!raw.trim()) continue;
       const h = raw.match(/^#+\s+(.+?)\s*$/);
       if (h) {
-        const it = { text: h[1], root: true, children: [] };
+        const it = { ...splitLink(h[1]), root: true, children: [] };
         trees.push(it); stack = [{ indent: -1, children: it.children }];
         continue;
       }
       const m = raw.match(/^(\s*)(?:(?:[-*+]|\d+[.)])\s+)?(.*?)\s*$/);
       const indent = m[1].replace(/\t/g, '    ').length;
-      const it = { text: m[2], children: [] };
+      const it = { ...splitLink(m[2]), children: [] };
       while (stack[stack.length - 1].indent >= indent) stack.pop();
       stack[stack.length - 1].children.push(it);
       stack.push({ indent, children: it.children });
@@ -926,6 +1003,7 @@
     pushUndo();
     const build = (it, parentId) => {
       const n = makeNode(it.text, parentId);
+      if (it.url) n.url = it.url;
       n.collapsed = !!it.collapsed && it.children.length > 0;
       nodes.set(n.id, n);
       for (const c of it.children) n.children.push(build(c, n.id).id);
@@ -1003,6 +1081,191 @@
     e.preventDefault();
     pasteTrees(trees);
   });
+
+  // ---------- リンク ----------
+  // ノードは URL を1つ持てる（n.url）。リンクのノードは、サーバーの /api/unfurl で読んだ題名とアイコンで
+  // カードに展開する（Figma: Links）。文字が空のリンクには、読み込んだ題名を文字として入れる。
+  function cleanUrl(value) {
+    const s = String(value == null ? '' : value).trim();
+    if (!/^https?:\/\/\S+$/i.test(s) || s.length > 2048) return null;
+    try { const u = new URL(s); return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null; } catch (e) { return null; }
+  }
+  function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return url; } }
+  // 箇条書きの1項目を文字とリンクに分ける。「[文字](URL)」と URL だけがリンク（lib/map.ts の splitLink と同じ）
+  function splitLink(raw) {
+    const m = raw.match(/^\[(.*)\]\((\S+)\)$/);
+    const url = m ? cleanUrl(m[2]) : null;
+    if (m && url) return { text: m[1].trim(), url };
+    const bare = cleanUrl(raw);
+    return bare ? { text: '', url: bare } : { text: raw };
+  }
+  function linkText(n) { return !n.url ? n.text : n.text ? `[${n.text}](${n.url})` : n.url; }
+  // 幅 max に収まるよう末尾を「…」にする
+  const truncCache = new Map();
+  function truncate(text, font, max) {
+    const key = font + '\n' + max + '\n' + text;
+    if (truncCache.has(key)) return truncCache.get(key);
+    meas.font = font;
+    let out = text;
+    if (meas.measureText(text).width > max) {
+      const chars = Array.from(text);
+      let lo = 0, hi = chars.length;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (meas.measureText(chars.slice(0, mid).join('') + '…').width <= max) lo = mid; else hi = mid - 1; }
+      out = chars.slice(0, lo).join('').trimEnd() + '…';
+    }
+    if (truncCache.size > 2000) truncCache.clear();
+    truncCache.set(key, out);
+    return out;
+  }
+
+  // リンク先の題名など。URL ごとに1度だけ取りに行き、同時には4本まで。読めなければドメインで代える。
+  const linkMetas = new Map(); // url → { status: 'loading' | 'ok' | 'error', title, site, description, image, icon }
+  const metaQueue = [];
+  let metaActive = 0;
+  function metaOf(url) {
+    let m = linkMetas.get(url);
+    if (!m) { m = { status: 'loading', title: '', site: hostOf(url), description: '', image: '', icon: '' }; linkMetas.set(url, m); metaQueue.push(url); pumpMeta(); }
+    return m;
+  }
+  function pumpMeta() {
+    while (metaActive < 4 && metaQueue.length) {
+      const url = metaQueue.shift();
+      metaActive++;
+      const p = new URLSearchParams({ url });
+      if (spaceId) p.set('space', spaceId);
+      fetch('/api/unfurl?' + p).then(r => r.ok ? r.json() : null).catch(() => null).then(data => {
+        metaActive--;
+        linkMetas.set(url, data && data.title ? { status: data.ok ? 'ok' : 'error', ...data }
+          : { status: 'error', title: hostOf(url), site: hostOf(url), description: '', image: '', icon: '' });
+        if (fillLinkTitles()) save();
+        layout(); requestDraw();
+        pumpMeta();
+      });
+    }
+  }
+  // 文字の空いたリンクに、読み込めた題名を入れる。閲覧のみの領域と、編集中のノードには入れない。入れたら true
+  function fillLinkTitles() {
+    if (readOnly) return false;
+    let changed = false;
+    for (const n of nodes.values()) {
+      if (!n.url || n.text || n.id === editingId) continue;
+      const m = metaOf(n.url);
+      if (m.status !== 'loading') { n.text = m.title || hostOf(n.url); changed = true; }
+    }
+    return changed;
+  }
+  function drawLink(n, e) {
+    const b = linkBox(n), x0 = b.padL + b.tile + b.gap, m = metaOf(n.url);
+    e.tile.setAttribute('x', b.padL); e.tile.setAttribute('y', (n.h - b.tile) / 2);
+    e.tile.setAttribute('width', b.tile); e.tile.setAttribute('height', b.tile);
+    const fx = b.padL + (b.tile - 16) / 2, fy = (n.h - 16) / 2;
+    e.globe.setAttribute('x', fx); e.globe.setAttribute('y', fy); e.fav.setAttribute('x', fx); e.fav.setAttribute('y', fy);
+    if (e.favHref !== (m.icon || '')) {
+      e.favHref = m.icon || '';
+      e.fav.style.display = 'none'; e.globe.style.display = '';
+      if (e.favHref) e.fav.setAttribute('href', e.favHref); else e.fav.removeAttribute('href');
+    }
+    e.lTitle.setAttribute('x', x0); e.lTitle.setAttribute('y', b.titleY);
+    if (e.lTitle.textContent !== n.linkTitle) e.lTitle.textContent = n.linkTitle;
+    const host = hostOf(n.url);
+    e.lMeta.setAttribute('x', x0); e.lMeta.setAttribute('y', b.metaY);
+    if (e.lMeta.textContent !== host) e.lMeta.textContent = host;
+    e.open.setAttribute('transform', `translate(${x0 + n.linkTitleW + 4},${b.titleY - 6})`);
+  }
+  function openLink(id) {
+    const n = nodes.get(id);
+    if (n && n.url) window.open(n.url, '_blank', 'noopener,noreferrer');
+  }
+
+  // リンクのパネル（Figma: Panel/Link）。リンクのノードを1つ選ぶと、枝の伸びる側に、上端をそろえて出す。
+  // 画面からはみ出すなら反対側、それでも入らなければ下に出す。ドラッグ中と文字の編集中は隠す。
+  const linkPanel = document.getElementById('link-panel');
+  const linkEdit = document.getElementById('link-edit');
+  const leUrl = document.getElementById('le-url'), leError = document.getElementById('le-error');
+  let linkPanelKey = '', linkEditFor = null;
+  function nodeRect(n) {
+    const r = svg.getBoundingClientRect();
+    const left = r.left + view.tx + view.s * (n.vx - n.w / 2), top = r.top + view.ty + view.s * (n.vy - n.h / 2);
+    return { left, top, right: left + view.s * n.w, bottom: top + view.s * n.h };
+  }
+  function placeAt(el, x, y) {
+    const M = 8, w = el.offsetWidth, h = el.offsetHeight;
+    x = Math.max(M, Math.min(x, innerWidth - w - M)); y = Math.max(M, Math.min(y, innerHeight - h - M));
+    el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  }
+  function renderLinkPanel(n) {
+    const m = metaOf(n.url);
+    const icon = document.getElementById('lp-icon'), image = document.getElementById('lp-image');
+    icon.hidden = !m.icon; if (m.icon) icon.src = m.icon; else icon.removeAttribute('src');
+    icon.onerror = () => { icon.hidden = true; };
+    document.getElementById('lp-site').textContent = m.site || hostOf(n.url);
+    document.getElementById('lp-title').textContent = m.status === 'loading' ? (n.text || '読み込み中…') : (m.title || n.text || hostOf(n.url));
+    document.getElementById('lp-desc').textContent = m.description || '';
+    image.hidden = !m.image; if (m.image) image.src = m.image; else image.removeAttribute('src');
+    image.onerror = () => { image.hidden = true; };
+    const a = document.getElementById('lp-url'); a.href = n.url; a.textContent = n.url; a.title = n.url;
+  }
+  function updateLinkPanels() {
+    const n = nodes.get(selectedId);
+    const show = !!n && !!n.url && !n.hidden && !editingId && !linkEditFor && !(drag && drag.moved) && !boardDrag;
+    if (!show) { if (linkPanel.classList.contains('show')) linkPanel.classList.remove('show'); linkPanelKey = ''; }
+    else {
+      const m = metaOf(n.url), key = [n.id, n.url, n.text, m.status].join('\n');
+      if (key !== linkPanelKey) { linkPanelKey = key; renderLinkPanel(n); }
+      linkPanel.classList.add('show');
+      const r = nodeRect(n), w = linkPanel.offsetWidth, p = n.parentId && nodes.get(n.parentId);
+      const outward = p && n.cx < p.cx ? -1 : 1;
+      const fits = x => x >= 8 && x + w <= innerWidth - 8;
+      const side = outward > 0 ? r.right + 12 : r.left - 12 - w, other = outward > 0 ? r.left - 12 - w : r.right + 12;
+      if (fits(side)) placeAt(linkPanel, side, r.top - 4);
+      else if (fits(other)) placeAt(linkPanel, other, r.top - 4);
+      else placeAt(linkPanel, r.left, r.bottom + 8);
+    }
+    const en = linkEditFor && nodes.get(linkEditFor);
+    if (linkEditFor && !en) closeLinkEditor();
+    else if (en) { const r = nodeRect(en); placeAt(linkEdit, r.left, r.bottom + 8); }
+  }
+  // ⌘K: 選択中のノードにリンクを付ける・直す（Figma: Panel/Link edit）
+  function openLinkEditor() {
+    const n = nodes.get(selectedId);
+    if (readOnly || !n) return;
+    finishEdit();
+    linkEditFor = n.id;
+    leUrl.value = n.url || ''; leError.textContent = '';
+    document.getElementById('le-unlink').hidden = !n.url;
+    linkEdit.classList.add('show');
+    updateLinkPanels();
+    leUrl.focus(); leUrl.select();
+    requestDraw();
+  }
+  function closeLinkEditor() {
+    if (!linkEditFor) return false;
+    linkEditFor = null;
+    linkEdit.classList.remove('show');
+    if (document.activeElement === leUrl) leUrl.blur();
+    requestDraw();
+    return true;
+  }
+  function setLink(id, url) {
+    const n = nodes.get(id);
+    if (!n || readOnly || n.url === url) return;
+    pushUndo();
+    if (url) n.url = url; else delete n.url;
+    commit();
+  }
+  linkEdit.addEventListener('submit', e => {
+    e.preventDefault();
+    const url = cleanUrl(leUrl.value);
+    if (!url) { leError.textContent = 'http:// か https:// で始まる URL を入れてください'; leUrl.focus(); return; }
+    const id = linkEditFor;
+    closeLinkEditor();
+    setLink(id, url);
+  });
+  document.getElementById('le-close').addEventListener('click', closeLinkEditor);
+  document.getElementById('le-unlink').addEventListener('click', () => { const id = linkEditFor; closeLinkEditor(); setLink(id, null); });
+  document.getElementById('lp-open').addEventListener('click', () => openLink(selectedId));
+  document.getElementById('lp-edit').addEventListener('click', openLinkEditor);
+  document.getElementById('lp-unlink').addEventListener('click', () => setLink(selectedId, null));
 
   // ---------- ボード ----------
   // ボードはマップをまとめて動かすための区画。どのマップが中にあるかは持たず、
@@ -1114,6 +1377,17 @@
   // ---------- レイアウト ----------
   function measure(n) {
     const root = isRoot(n);
+    if (n.url) {
+      // リンクは題名（編集中は打っている文字のまま）とドメインの長いほうに合わせる
+      const b = linkBox(n), font = (root ? '600 18px ' : '15px ') + FONT_FAMILY;
+      n.linkTitle = n.id === editingId ? n.text : truncate(n.text || metaOf(n.url).title || hostOf(n.url), font, LINK_TITLE_MAX);
+      meas.font = font; n.linkTitleW = meas.measureText(n.linkTitle).width;
+      meas.font = '12px ' + FONT_FAMILY;
+      const dw = meas.measureText(hostOf(n.url)).width;
+      n.w = Math.ceil(b.padL + b.tile + b.gap + Math.max(n.linkTitleW + 16, dw) + b.padR);
+      n.h = root ? ROOT_LINK_H : LINK_H;
+      return;
+    }
     meas.font = (root ? '600 18px ' : '15px ') + FONT_FAMILY;
     const tw = meas.measureText(n.text).width;
     const pad = root ? ROOT_PAD : PAD;
@@ -1177,14 +1451,28 @@
         const g = el('g', { class: 'node' }); g.dataset.id = n.id;
         const ring = el('rect', { class: 'sel-ring' });
         const rect = el('rect', { class: 'body' });
-        const text = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+        const text = el('text', { class: 'label', 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+        // リンクのとき: アイコンの台・サイトのアイコン（読めなければ地球）・題名・↗・ドメイン
+        const link = el('g', { class: 'link-parts' });
+        const tile = el('rect', { class: 'fav-tile', rx: 6, ry: 6 });
+        const globe = el('use', { class: 'fav-globe', href: '#i-globe', width: 16, height: 16 });
+        const fav = el('image', { class: 'fav', width: 16, height: 16, preserveAspectRatio: 'xMidYMid meet' });
+        fav.style.display = 'none';
+        fav.addEventListener('load', () => { fav.style.display = ''; globe.style.display = 'none'; });
+        fav.addEventListener('error', () => { fav.style.display = 'none'; globe.style.display = ''; });
+        const lTitle = el('text', { class: 'link-title', 'dominant-baseline': 'central' });
+        const lMeta = el('text', { class: 'link-meta', 'dominant-baseline': 'central' });
+        const open = el('g', { class: 'link-open' });
+        const openTitle = el('title'); openTitle.textContent = '新しいタブで開く';
+        open.append(openTitle, el('rect', { x: -4, y: -4, width: 20, height: 20, fill: 'transparent' }), el('use', { href: '#i-external', width: 12, height: 12 }));
+        link.append(tile, globe, fav, lTitle, lMeta, open);
         const toggle = el('g', { class: 'toggle' });
         const tPill = el('rect', { height: TOGGLE_H, y: -TOGGLE_H / 2, rx: TOGGLE_H / 2, ry: TOGGLE_H / 2 });
         const tDash = el('line', { class: 'dash', x1: -3.5, y1: 0, x2: 3.5, y2: 0 });
         const tText = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
         toggle.append(tPill, tDash, tText);
-        g.append(ring, rect, text, toggle); nodesG.appendChild(g);
-        nodeEls.set(n.id, { g, ring, rect, text, toggle, tPill, tDash, tText });
+        g.append(ring, rect, text, link, toggle); nodesG.appendChild(g);
+        nodeEls.set(n.id, { g, ring, rect, text, link, tile, globe, fav, favHref: null, lTitle, lMeta, open, toggle, tPill, tDash, tText });
       }
       if (n.parentId && !linkEls.has(n.id)) {
         const p = el('path', { class: 'link' }); linksG.appendChild(p); linkEls.set(n.id, p);
@@ -1218,6 +1506,7 @@
     drawBoards();
     const sel = nodes.get(selectedId), mode = sel ? layoutOf(rootOf(sel)) : null;
     for (const b of layoutButtons) { b.disabled = !sel; b.classList.toggle('active', b.dataset.layout === mode); }
+    linkButton.disabled = !sel;
     const branch = sel && branchOf(sel);
     for (const b of sideButtons) { b.disabled = !branch; b.classList.toggle('active', !!branch && b.dataset.side === branch.side); }
     for (const n of nodes.values()) {
@@ -1227,7 +1516,7 @@
       e.g.setAttribute('class', 'node' + (isRoot(n) ? ' root' : '') + (n.id === selectedId ? ' selected' : '')
         + (drag && drag.drop && drag.drop.parentId === n.id && !drag.drop.line ? ' drop-target' : '')
         + (n.id === editingId ? ' editing' : '') + (dragOffset(n).x || dragOffset(n).y ? ' dragging' : '')
-        + (n.hidden ? ' hidden' : '') + (n.collapsed ? ' collapsed' : ''));
+        + (n.hidden ? ' hidden' : '') + (n.collapsed ? ' collapsed' : '') + (n.url ? ' is-link' : ''));
       const r = isRoot(n) ? ROOT_R : NODE_R, o = RING_GAP + 1; // リングの線（2px）の中心は、本体の外側 3px
       e.rect.setAttribute('width', n.w); e.rect.setAttribute('height', n.h);
       e.rect.setAttribute('rx', r); e.rect.setAttribute('ry', r);
@@ -1235,8 +1524,11 @@
       e.ring.setAttribute('width', n.w + o * 2); e.ring.setAttribute('height', n.h + o * 2);
       e.ring.setAttribute('rx', r + o); e.ring.setAttribute('ry', r + o);
       if (color) e.rect.style.stroke = color; else e.rect.style.stroke = '';
-      e.text.setAttribute('x', n.w / 2); e.text.setAttribute('y', n.h / 2);
-      if (e.text.textContent !== n.text) e.text.textContent = n.text;
+      if (n.url) drawLink(n, e);
+      else {
+        e.text.setAttribute('x', n.w / 2); e.text.setAttribute('y', n.h / 2);
+        if (e.text.textContent !== n.text) e.text.textContent = n.text;
+      }
       if (n.parentId && n.children.length) {
         const p = nodes.get(n.parentId);
         const d = p.cx <= n.cx ? 1 : -1;
@@ -1268,11 +1560,15 @@
     if (line) for (const k of ['x1', 'x2', 'y1', 'y2']) insertLine.setAttribute(k, line[k]);
     if (editingId) {
       const n = nodes.get(editingId);
-      const root = isRoot(n), fs = root ? 18 : 15, pad = root ? ROOT_PAD : PAD;
-      const wx = n.vx - n.w / 2 + pad, wy = n.vy - fs * 0.6;
+      const root = isRoot(n), fs = root ? 18 : 15, b = linkBox(n);
+      // リンクは題名の段に重ねる
+      const pad = n.url ? b.padL + b.tile + b.gap : root ? ROOT_PAD : PAD;
+      const wx = n.vx - n.w / 2 + pad, wy = n.url ? n.vy - n.h / 2 + b.titleY - fs * 0.6 : n.vy - fs * 0.6;
       editor.style.fontSize = fs + 'px'; editor.style.fontWeight = root ? '600' : '400';
+      editor.style.color = n.url ? 'var(--color-text-link)' : '';
       editor.style.transform = `translate(${view.tx + view.s * wx}px, ${view.ty + view.s * wy}px) scale(${view.s})`;
     }
+    updateLinkPanels();
   }
 
   // ---------- 編集 ----------
@@ -1297,7 +1593,10 @@
     editingId = null;
     if (!n) return;
     n.text = editor.textContent.replace(/[\r\n]/g, '').trim();
-    if (n.text === editOriginal) undoStack.pop();
+    // URL だけを書いたらリンクにする。題名はあとで読み込んで文字にする
+    const url = cleanUrl(n.text);
+    if (url) { n.url = url; n.text = ''; }
+    if (n.text === editOriginal && !url) undoStack.pop();
     commit();
   }
   function cancelEdit() {
@@ -1421,6 +1720,9 @@
       requestDraw();
       return;
     }
+    closeLinkEditor();
+    // リンクは ↗ か、⌘ を押しながらのクリックで開く
+    if (g && (e.target.closest('.link-open') || ((e.metaKey || e.ctrlKey) && nodes.get(g.dataset.id).url))) { openLink(g.dataset.id); return; }
     if (g && e.target.closest('.toggle')) { if (!readOnly) { finishEdit(); toggleCollapse(g.dataset.id); } return; }
     if (g && readOnly) { selectedId = g.dataset.id; requestDraw(); return; }
     if (g) {
@@ -1523,7 +1825,7 @@
     // pointerdown で svg にポインタを捕捉しているので、e.target は svg になる。座標から要素を引き直す
     const hit = document.elementFromPoint(e.clientX, e.clientY) || e.target;
     const g = hit.closest && hit.closest('.node');
-    if (readOnly || (g && hit.closest('.toggle'))) return;
+    if (readOnly || (g && hit.closest('.toggle, .link-open'))) return;
     const bt = !g && hit.closest && hit.closest('.board-title');
     if (bt) { e.preventDefault(); startBoardEdit(bt.closest('.board').dataset.id); return; }
     if (g) { e.preventDefault(); startEdit(g.dataset.id); }
@@ -1570,6 +1872,7 @@
     if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1.2); return; }
     if (meta && e.key === '-') { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1 / 1.2); return; }
     if (meta && e.key === '0') { e.preventDefault(); fitView(); return; }
+    if (meta && e.key === 'Enter') { e.preventDefault(); if (selectedId) openLink(selectedId); return; }
     // 閲覧のみでは、移動と表示とコピーだけ受ける
     if (readOnly) {
       if (e.key.startsWith('Arrow') && !meta && selectedId) { e.preventDefault(); navigate(e.key); }
@@ -1579,6 +1882,7 @@
       return;
     }
     if (meta && e.key === '.') { e.preventDefault(); if (selectedId) toggleCollapse(selectedId); return; }
+    if (meta && e.key.toLowerCase() === 'k') { e.preventDefault(); openLinkEditor(); return; }
     if (meta && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); if (selectedId) setSide(selectedId, e.key === 'ArrowLeft' ? 'left' : 'right'); return;
     }
@@ -1609,6 +1913,7 @@
     newMap(); startEdit(selectedId);
   });
   document.getElementById('btn-add-board').addEventListener('click', addBoard);
+  linkButton.addEventListener('click', openLinkEditor);
   document.getElementById('btn-zoom-in').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1.2));
   document.getElementById('btn-zoom-out').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1 / 1.2));
   document.getElementById('btn-fit').addEventListener('click', fitView);

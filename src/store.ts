@@ -18,11 +18,15 @@
 // - POST /api/op[?name=]      名前・ID・経路で指した操作を当てる {op, args}
 // - POST /api/import          ファイル時代のマップをまとめて入れる {maps: {名前: マップ}, current?, replace?}
 // - GET  /api/ws              変更を WebSocket で流す（map / current / maps）
+// - GET  /api/unfurl?url=     リンク先の題名・サイト名・説明・画像・アイコン（src/unfurl.ts）。領域ごとに覚えておく
 // 書き込みは同期の SQL だけで行い、途中で await しない。だから読んでから書くまでに別の書き込みが割り込まない。
+// リンクの題名を読み込む操作（add <URL> など）は、マップを読む前にページを取りに行く。
 import { DurableObject } from 'cloudflare:workers';
-import { cleanName, normalize, newMap, isMap, roots } from '../lib/map.ts';
+import { cleanName, normalize, newMap, isMap, roots, cleanUrl } from '../lib/map.ts';
 import type { MindMap } from '../lib/map.ts';
-import { applyOp, OPS } from '../lib/ops.ts';
+import { applyOp, OPS, urlsToTitle } from '../lib/ops.ts';
+import { unfurl, privateHost } from './unfurl.ts';
+import type { LinkMeta } from './unfurl.ts';
 import { Auth, allowedEmails, ownerEmail, sameOrigin } from './auth.ts';
 import { Directory, LOCAL_SPACE, cleanEmail } from './directory.ts';
 import type { Role, SpaceInfo } from './directory.ts';
@@ -65,6 +69,7 @@ export class MindmapStore extends DurableObject<Env> {
       name TEXT PRIMARY KEY, data TEXT NOT NULL, version INTEGER NOT NULL,
       title TEXT NOT NULL, roots INTEGER NOT NULL, updated_at TEXT NOT NULL)`);
     this.sql.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS links (url TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at INTEGER NOT NULL)');
     // ブラウザが接続を保つために送る ping には、DO を起こさずに pong を返す
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
@@ -231,6 +236,31 @@ export class MindmapStore extends DurableObject<Env> {
     return q ? cleanName(q) : this.ensureAny();
   }
 
+  // ---------- リンク ----------
+
+  /** リンク先の題名など。読めたものは 1 週間、読めなかったものは 1 時間とっておく。
+   * 手元やネットワーク内のアドレスは、手元の開発（領域 local）でだけ取りに行く。 */
+  async linkMeta(url: string, spaceId: string): Promise<LinkMeta> {
+    const row = this.sql.exec<{ data: string; fetched_at: number }>('SELECT data, fetched_at FROM links WHERE url = ?', url).toArray()[0];
+    if (row) {
+      const meta = JSON.parse(row.data) as LinkMeta;
+      if (Date.now() - row.fetched_at < (meta.ok ? 7 * 86400e3 : 3600e3)) return meta;
+    }
+    if (privateHost(url) && spaceId !== LOCAL_SPACE) throw new HttpError(400, `手元やネットワーク内のアドレスは読み込めません: ${url}`);
+    const meta = await unfurl(url);
+    this.sql.exec(`INSERT INTO links (url, data, fetched_at) VALUES (?, ?, ?)
+      ON CONFLICT(url) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at`, url, JSON.stringify(meta), Date.now());
+    return meta;
+  }
+  /** 操作の前に、文字の空くリンクの題名をまとめて読み込む。読めなければ入れない（ドメインになる）。 */
+  async titlesFor(op: string, args: OpArgs, spaceId: string): Promise<Record<string, string>> {
+    const titles: Record<string, string> = {};
+    await Promise.all(urlsToTitle(op, args).map(async u => {
+      try { const m = await this.linkMeta(u, spaceId); if (m.ok) titles[u] = m.title; } catch { /* ドメインのままにする */ }
+    }));
+    return titles;
+  }
+
   // ---------- 配信 ----------
 
   broadcast(msg: unknown) {
@@ -262,8 +292,16 @@ export class MindmapStore extends DurableObject<Env> {
       if (access.role !== 'owner' && request.method !== 'GET') {
         return json(403, { error: 'この領域は閲覧のみです。書き込めるのは持ち主だけです' });
       }
-      // 本文は先に読み切る。ここから先は await しない
+      if (url.pathname === '/api/unfurl' && request.method === 'GET') {
+        const target = cleanUrl(url.searchParams.get('url'));
+        if (!target) throw new HttpError(400, 'url（http か https）が必要です');
+        return json(200, await this.linkMeta(target, access.spaceId));
+      }
+      // 本文は先に読み切る。リンクの題名もここで読み込んでおく。ここから先は await しない
       const body = request.method === 'GET' ? {} : await readJson(request);
+      if (url.pathname === '/api/op' && body.args && typeof body.args === 'object') {
+        body.args.titles = await this.titlesFor(String(body.op || ''), body.args, access.spaceId);
+      }
       return this.route(request.method, url, body);
     } catch (e) {
       if (e instanceof HttpError) return json(e.status, { error: e.message, ...e.body });

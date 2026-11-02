@@ -95,6 +95,20 @@ node cli.ts move 採用 --under 予算                      # 中心ノードを
 
 `add` で `--under` を省くと、中心ノードが1つのときはその下に入ります。中心ノードが複数あるときは `--under` か `--root` が必要です。
 
+## リンク
+
+ノードには URL を1つ付けられます。画面では、ページの題名・アイコン・ドメインのカードに展開され、↗ で開けます。
+
+```sh
+node cli.ts add https://developers.cloudflare.com/durable-objects/ --under 参考資料   # 題名を読み込んで文字にする
+node cli.ts add "設計メモ" --url https://example.com/memo --under 参考資料            # 文字を決めて付ける
+node cli.ts link 予算 https://example.com/budget                                     # 今あるノードに付ける（文字はそのまま）
+node cli.ts unlink 予算
+```
+
+`show` では `(n5 リンク:https://…)` と出ます。`export` と `import` では `- [文字](URL)` と書き、URL だけの行もリンクになります（題名を読み込みます）。
+URL は `http://` か `https://` で始まるものだけです。人が付けた文字は、題名で上書きしません。
+
 ## まとめて入れる: Markdown の箇条書き
 
 骨組みを一気に作るときは、箇条書きを書いて取り込みます。インデント（スペース2つ以上かタブ）が階層です。`-`、`*`、`+`、`1.` を使えます。
@@ -141,8 +155,10 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 - `lib/ops.ts`: CLI の操作（add・move など）を、名前の解決ごとマップに当てる。Durable Object が呼ぶ。
 - `cli.ts`: コマンドの入口。`node cli.ts` でそのまま動く（Node 23.6 以上）。
 - `cloudflare.config.ts`: Worker・binding・Durable Object・secret の宣言と、デプロイ先のアカウント。`wrangler.config.ts`: 静的アセットの置き場と手元の開発サーバーのポート。
-- 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }], boards: [{ id, name, x, y, w, h }] }`。版番号はマップごとに書き込むたびに1つ上がる。
+- `src/unfurl.ts`: リンクの展開。ページの `<head>` を読んで、題名・サイト名・説明・画像・アイコンを返す（`GET /api/unfurl?url=`）。手元やネットワーク内のアドレスは、手元の開発（領域 `local`）でだけ読む。
+- 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed, url? }], boards: [{ id, name, x, y, w, h }] }`。版番号はマップごとに書き込むたびに1つ上がる。
   `boards` は画面で作るボード（四角い区画、`x, y` は左上）。中のマップは持たず、画面で動かすときに中心ノードの位置で決める。CLI の操作は `boards` に触れずにそのまま残す。
+  リンクのあるノードは `url`（http か https）を持つ。リンク先の題名・説明・画像・アイコンは保存せず、`/api/unfurl` が領域ごとに1週間覚えておく。
   `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置、`layout` は配置（`both`・`right`・`left`、省略時は `both`）。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
   中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。
 - 型の確認は `npm run typecheck`。
