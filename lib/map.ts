@@ -16,7 +16,7 @@ export interface MapNode {
   collapsed: boolean;
   /** 中心ノードだけが持つ配置。省くと both。 */
   layout?: Layout;
-  /** リンク先（http か https）。あれば画面はページの題名とアイコンのカードに展開する。 */
+  /** リンク先（http か https）。あれば画面はサイトのアイコンとページの題名で表示する。 */
   url?: string;
   /** 自由に置けた頃の印。読み込むときに外す。 */
   pinned?: boolean;

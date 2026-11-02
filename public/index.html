@@ -102,13 +102,10 @@
   .node text { fill: var(--color-text-primary); font-size: 15px; pointer-events: none; user-select: none; font-family: var(--font-sans); }
   .node.root text { font-size: 18px; font-weight: 600; }
   .node.editing .label, .node.editing .link-title { visibility: hidden; }
-  /* リンクのノード（Figma: Node / Type=Link）。アイコンの台・題名と ↗・ドメインの2段 */
+  /* リンクのノード（Figma: Node / Type=Link）。サイトのアイコン・題名・↗ の1行。高さはふつうのノードと同じ */
   .node:not(.is-link) .link-parts, .node.is-link .label { display: none; }
-  .node .fav-tile { fill: var(--color-bg-hover); }
   .node .fav-globe { color: var(--color-text-secondary); }
   .node .fav-globe, .node .link-open use { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-  .node .link-title { fill: var(--color-text-link); }
-  .node .link-meta, .node.root .link-meta { fill: var(--color-text-secondary); font-size: 12px; font-weight: 400; }
   .node .link-open { color: var(--color-text-link); cursor: pointer; }
   .node .link-open:hover use { stroke-width: 2.25; }
   .node.hidden, .link.hidden { display: none; }
@@ -357,7 +354,7 @@
     <button id="le-close" class="icon-btn" type="button" aria-label="閉じる"><svg class="icon"><use href="#i-close"/></svg></button>
   </div>
   <input id="le-url" class="input" type="text" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
-  <p>URL を貼ると、ページの題名とアイコンを読み込んで、カードに展開します。</p>
+  <p>URL を貼ると、ページの題名とアイコンを読み込んで、ノードに表示します。</p>
   <div id="le-error" class="error"></div>
   <div class="link-edit-actions">
     <button id="le-unlink" class="btn" type="button"><svg class="icon"><use href="#i-unlink"/></svg>外す</button>
@@ -438,10 +435,11 @@
   // 大きさは Figma の size/node・size/root・radius/node・radius/lg と同じ。
   const NODE_H = 34, ROOT_H = 46, PAD = 14, ROOT_PAD = 20, HGAP = 56, VGAP = 14, MIN_W = 44;
   const NODE_R = 10, ROOT_R = 12, RING_GAP = 2, TOGGLE_H = 16, TOGGLE_GAP = 4;
-  // リンクのノード（Figma: Node / Type=Link・Root link）。高さ 52（中心は 60）、題名は 280px で切る。
-  const LINK_H = 52, ROOT_LINK_H = 60, LINK_TITLE_MAX = 280;
-  const LINK_BOX = { padL: 10, padR: 14, tile: 24, gap: 10, titleY: 18, metaY: 36 };
-  const ROOT_LINK_BOX = { padL: 12, padR: 20, tile: 28, gap: 12, titleY: 22, metaY: 42 };
+  // リンクのノード（Figma: Node / Type=Link・Root link）。高さはふつうのノードと同じで、サイトのアイコン・題名・↗ の1行。
+  // 題名は 280px で切る。ドメインはリンクのパネルにだけ出す。
+  const LINK_TITLE_MAX = 280;
+  const LINK_BOX = { padL: 10, padR: 12, icon: 16, gap: 6, open: 12 };
+  const ROOT_LINK_BOX = { padL: 16, padR: 18, icon: 18, gap: 8, open: 14 };
   const linkBox = n => isRoot(n) ? ROOT_LINK_BOX : LINK_BOX;
   const STORAGE_KEY = 'mindmap-v1';
 
@@ -1083,8 +1081,8 @@
   });
 
   // ---------- リンク ----------
-  // ノードは URL を1つ持てる（n.url）。リンクのノードは、サーバーの /api/unfurl で読んだ題名とアイコンで
-  // カードに展開する（Figma: Links）。文字が空のリンクには、読み込んだ題名を文字として入れる。
+  // ノードは URL を1つ持てる（n.url）。リンクのノードは、サーバーの /api/unfurl で読んだアイコンと題名を
+  // 1行に並べる（Figma: Links）。文字が空のリンクには、読み込んだ題名を文字として入れる。
   function cleanUrl(value) {
     const s = String(value == null ? '' : value).trim();
     if (!/^https?:\/\/\S+$/i.test(s) || s.length > 2048) return null;
@@ -1155,22 +1153,21 @@
     return changed;
   }
   function drawLink(n, e) {
-    const b = linkBox(n), x0 = b.padL + b.tile + b.gap, m = metaOf(n.url);
-    e.tile.setAttribute('x', b.padL); e.tile.setAttribute('y', (n.h - b.tile) / 2);
-    e.tile.setAttribute('width', b.tile); e.tile.setAttribute('height', b.tile);
-    const fx = b.padL + (b.tile - 16) / 2, fy = (n.h - 16) / 2;
-    e.globe.setAttribute('x', fx); e.globe.setAttribute('y', fy); e.fav.setAttribute('x', fx); e.fav.setAttribute('y', fy);
+    const b = linkBox(n), x0 = b.padL + b.icon + b.gap, m = metaOf(n.url);
+    const fy = (n.h - b.icon) / 2;
+    for (const icon of [e.globe, e.fav]) {
+      icon.setAttribute('x', b.padL); icon.setAttribute('y', fy); icon.setAttribute('width', b.icon); icon.setAttribute('height', b.icon);
+    }
     if (e.favHref !== (m.icon || '')) {
       e.favHref = m.icon || '';
       e.fav.style.display = 'none'; e.globe.style.display = '';
       if (e.favHref) e.fav.setAttribute('href', e.favHref); else e.fav.removeAttribute('href');
     }
-    e.lTitle.setAttribute('x', x0); e.lTitle.setAttribute('y', b.titleY);
+    e.lTitle.setAttribute('x', x0); e.lTitle.setAttribute('y', n.h / 2);
     if (e.lTitle.textContent !== n.linkTitle) e.lTitle.textContent = n.linkTitle;
-    const host = hostOf(n.url);
-    e.lMeta.setAttribute('x', x0); e.lMeta.setAttribute('y', b.metaY);
-    if (e.lMeta.textContent !== host) e.lMeta.textContent = host;
-    e.open.setAttribute('transform', `translate(${x0 + n.linkTitleW + 4},${b.titleY - 6})`);
+    e.openIcon.setAttribute('width', b.open); e.openIcon.setAttribute('height', b.open);
+    e.openHit.setAttribute('width', b.open + 8); e.openHit.setAttribute('height', b.open + 8);
+    e.open.setAttribute('transform', `translate(${x0 + n.linkTitleW + b.gap},${(n.h - b.open) / 2})`);
   }
   function openLink(id) {
     const n = nodes.get(id);
@@ -1378,14 +1375,12 @@
   function measure(n) {
     const root = isRoot(n);
     if (n.url) {
-      // リンクは題名（編集中は打っている文字のまま）とドメインの長いほうに合わせる
+      // リンクはアイコン・題名（編集中は打っている文字のまま）・↗ を並べた幅にする
       const b = linkBox(n), font = (root ? '600 18px ' : '15px ') + FONT_FAMILY;
       n.linkTitle = n.id === editingId ? n.text : truncate(n.text || metaOf(n.url).title || hostOf(n.url), font, LINK_TITLE_MAX);
       meas.font = font; n.linkTitleW = meas.measureText(n.linkTitle).width;
-      meas.font = '12px ' + FONT_FAMILY;
-      const dw = meas.measureText(hostOf(n.url)).width;
-      n.w = Math.ceil(b.padL + b.tile + b.gap + Math.max(n.linkTitleW + 16, dw) + b.padR);
-      n.h = root ? ROOT_LINK_H : LINK_H;
+      n.w = Math.ceil(b.padL + b.icon + b.gap + n.linkTitleW + b.gap + b.open + b.padR);
+      n.h = root ? ROOT_H : NODE_H;
       return;
     }
     meas.font = (root ? '600 18px ' : '15px ') + FONT_FAMILY;
@@ -1452,27 +1447,26 @@
         const ring = el('rect', { class: 'sel-ring' });
         const rect = el('rect', { class: 'body' });
         const text = el('text', { class: 'label', 'text-anchor': 'middle', 'dominant-baseline': 'central' });
-        // リンクのとき: アイコンの台・サイトのアイコン（読めなければ地球）・題名・↗・ドメイン
+        // リンクのとき: サイトのアイコン（読めなければ地球）・題名・↗
         const link = el('g', { class: 'link-parts' });
-        const tile = el('rect', { class: 'fav-tile', rx: 6, ry: 6 });
-        const globe = el('use', { class: 'fav-globe', href: '#i-globe', width: 16, height: 16 });
-        const fav = el('image', { class: 'fav', width: 16, height: 16, preserveAspectRatio: 'xMidYMid meet' });
+        const globe = el('use', { class: 'fav-globe', href: '#i-globe' });
+        const fav = el('image', { class: 'fav', preserveAspectRatio: 'xMidYMid meet' });
         fav.style.display = 'none';
         fav.addEventListener('load', () => { fav.style.display = ''; globe.style.display = 'none'; });
         fav.addEventListener('error', () => { fav.style.display = 'none'; globe.style.display = ''; });
         const lTitle = el('text', { class: 'link-title', 'dominant-baseline': 'central' });
-        const lMeta = el('text', { class: 'link-meta', 'dominant-baseline': 'central' });
         const open = el('g', { class: 'link-open' });
         const openTitle = el('title'); openTitle.textContent = '新しいタブで開く';
-        open.append(openTitle, el('rect', { x: -4, y: -4, width: 20, height: 20, fill: 'transparent' }), el('use', { href: '#i-external', width: 12, height: 12 }));
-        link.append(tile, globe, fav, lTitle, lMeta, open);
+        const openHit = el('rect', { x: -4, y: -4, fill: 'transparent' }), openIcon = el('use', { href: '#i-external' });
+        open.append(openTitle, openHit, openIcon);
+        link.append(globe, fav, lTitle, open);
         const toggle = el('g', { class: 'toggle' });
         const tPill = el('rect', { height: TOGGLE_H, y: -TOGGLE_H / 2, rx: TOGGLE_H / 2, ry: TOGGLE_H / 2 });
         const tDash = el('line', { class: 'dash', x1: -3.5, y1: 0, x2: 3.5, y2: 0 });
         const tText = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
         toggle.append(tPill, tDash, tText);
         g.append(ring, rect, text, link, toggle); nodesG.appendChild(g);
-        nodeEls.set(n.id, { g, ring, rect, text, link, tile, globe, fav, favHref: null, lTitle, lMeta, open, toggle, tPill, tDash, tText });
+        nodeEls.set(n.id, { g, ring, rect, text, link, globe, fav, favHref: null, lTitle, open, openHit, openIcon, toggle, tPill, tDash, tText });
       }
       if (n.parentId && !linkEls.has(n.id)) {
         const p = el('path', { class: 'link' }); linksG.appendChild(p); linkEls.set(n.id, p);
@@ -1561,11 +1555,10 @@
     if (editingId) {
       const n = nodes.get(editingId);
       const root = isRoot(n), fs = root ? 18 : 15, b = linkBox(n);
-      // リンクは題名の段に重ねる
-      const pad = n.url ? b.padL + b.tile + b.gap : root ? ROOT_PAD : PAD;
-      const wx = n.vx - n.w / 2 + pad, wy = n.url ? n.vy - n.h / 2 + b.titleY - fs * 0.6 : n.vy - fs * 0.6;
+      // リンクはアイコンの右の題名に重ねる
+      const pad = n.url ? b.padL + b.icon + b.gap : root ? ROOT_PAD : PAD;
+      const wx = n.vx - n.w / 2 + pad, wy = n.vy - fs * 0.6;
       editor.style.fontSize = fs + 'px'; editor.style.fontWeight = root ? '600' : '400';
-      editor.style.color = n.url ? 'var(--color-text-link)' : '';
       editor.style.transform = `translate(${view.tx + view.s * wx}px, ${view.ty + view.s * wy}px) scale(${view.s})`;
     }
     updateLinkPanels();

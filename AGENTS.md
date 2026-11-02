@@ -97,7 +97,7 @@ node cli.ts move 採用 --under 予算                      # 中心ノードを
 
 ## リンク
 
-ノードには URL を1つ付けられます。画面では、ページの題名・アイコン・ドメインのカードに展開され、↗ で開けます。
+ノードには URL を1つ付けられます。画面では、サイトのアイコン・ページの題名・↗ の1行で表示され、↗ で開けます。
 
 ```sh
 node cli.ts add https://developers.cloudflare.com/durable-objects/ --under 参考資料   # 題名を読み込んで文字にする
