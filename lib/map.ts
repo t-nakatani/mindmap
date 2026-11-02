@@ -16,6 +16,8 @@ export interface MapNode {
   collapsed: boolean;
   /** 中心ノードだけが持つ配置。省くと both。 */
   layout?: Layout;
+  /** リンク先（http か https）。あれば画面はサイトのアイコンとページの題名で表示する。 */
+  url?: string;
   /** 自由に置けた頃の印。読み込むときに外す。 */
   pinned?: boolean;
 }
@@ -38,8 +40,54 @@ export interface MindMap {
   rootPos?: { x: number; y: number };
   name?: string;
 }
-/** 箇条書きを読んだ木。 */
-export interface OutlineItem { text: string; children: OutlineItem[] }
+/** 箇条書きを読んだ木。url があればリンクのノードになる（文字が空なら、題名を読み込んで入れる）。 */
+export interface OutlineItem { text: string; url?: string; children: OutlineItem[] }
+
+// ---------- リンク ----------
+
+/** http か https の URL なら整えて返す。ほかは null。 */
+export function cleanUrl(value: unknown): string | null {
+  const s = String(value ?? '').trim();
+  if (!/^https?:\/\/\S+$/i.test(s) || s.length > 2048) return null;
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null;
+  } catch { return null; }
+}
+/** 文字が URL だけか。 */
+export function isUrl(text: string): boolean { return cleanUrl(text) !== null; }
+/** 表示用のドメイン（先頭の www. は省く）。 */
+export function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+}
+/** 箇条書きの1項目の文字を、文字とリンクに分ける。「[文字](URL)」と、URL だけの行がリンクになる。 */
+export function splitLink(raw: string): { text: string; url?: string } {
+  const m = raw.match(/^\[(.*)\]\((\S+)\)$/);
+  const url = m ? cleanUrl(m[2]) : null;
+  if (m && url) return { text: m[1].trim(), url };
+  const bare = cleanUrl(raw);
+  return bare ? { text: '', url: bare } : { text: raw };
+}
+/** 箇条書きの1行に書く形。リンクは「[文字](URL)」、文字が無ければ URL だけ。 */
+export function linkText(n: { text: string; url?: string }): string {
+  if (!n.url) return n.text;
+  return n.text ? `[${n.text}](${n.url})` : n.url;
+}
+/** 木の中で、文字の空いたリンクに題名を入れる。titles に無ければドメインにする。 */
+export function fillLinkTitles(items: OutlineItem[], titles: Record<string, string> = {}): void {
+  for (const it of items) {
+    if (it.url && !it.text) it.text = titles[it.url] || hostOf(it.url);
+    fillLinkTitles(it.children, titles);
+  }
+}
+/** 木の中の、文字の空いたリンクの URL。 */
+export function untitledUrls(items: OutlineItem[], acc: string[] = []): string[] {
+  for (const it of items) {
+    if (it.url && !it.text && !acc.includes(it.url)) acc.push(it.url);
+    untitledUrls(it.children, acc);
+  }
+  return acc;
+}
 
 export function validName(name: unknown): name is string {
   return typeof name === 'string' && /^[^\\/.\s][^\\/]{0,63}$/.test(name) && !/[\x00-\x1f]/.test(name);
@@ -61,6 +109,7 @@ export function normalize(map: MindMap): MindMap {
   if (map) for (const n of map.nodes) {
     if (n.parentId) { n.dx = 0; n.dy = 0; }
     delete n.pinned;
+    if (n.url !== undefined) { const u = cleanUrl(n.url); if (u) n.url = u; else delete n.url; }
   }
   if (map) delete map.name;
   return map;
@@ -91,8 +140,9 @@ function nextRootPos(map: MindMap) {
   return { dx: Math.min(...rs.map(r => r.dx)), dy: Math.max(...rs.map(r => r.dy)) + 400 };
 }
 
-export function addRoot(map: MindMap, text: string): MapNode {
+export function addRoot(map: MindMap, text: string, url?: string): MapNode {
   const n = makeNode(map, text, null);
+  if (url) n.url = url;
   Object.assign(n, nextRootPos(map));
   map.nodes.push(n);
   return n;
@@ -196,8 +246,9 @@ function balancedSide(map: MindMap, root: MapNode): Side {
   return right <= kids.length - right ? 'right' : 'left';
 }
 
-export function addChild(map: MindMap, parent: MapNode, text: string, { after = null }: { after?: MapNode | null } = {}): MapNode {
+export function addChild(map: MindMap, parent: MapNode, text: string, { after = null, url }: { after?: MapNode | null; url?: string } = {}): MapNode {
   const n = makeNode(map, text, parent.id);
+  if (url) n.url = url;
   if (!parent.parentId) { n.side = balancedSide(map, parent); n.colorIndex = nextColor(parent); }
   parent.collapsed = false;
   map.nodes.push(n);
@@ -242,16 +293,17 @@ export function makeRoot(map: MindMap, n: MapNode): void {
 }
 
 /** 階層つきの箇条書きにする。withIds なら ID と状態も付ける。
- * ID なしでマップ全体を書くときは、中心ノードごとに「# 見出し」を立てる。 */
+ * ID なしでマップ全体を書くときは、中心ノードごとに「# 見出し」を立てる。リンクは「[文字](URL)」で書く。 */
 export function outline(map: MindMap, { withIds = false, from = null }: { withIds?: boolean; from?: MapNode | null } = {}): string {
   const byId = index(map);
   const lines: string[] = [];
   const walk = (n: MapNode, depth: number) => {
-    let line = '  '.repeat(depth) + '- ' + n.text;
+    let line = '  '.repeat(depth) + '- ' + (withIds ? n.text : linkText(n));
     if (withIds) {
       const marks: string[] = [];
       if (!n.parentId) marks.push('中心', '配置:' + LAYOUTS[layoutOf(n)]);
       if (n.collapsed) marks.push(`折りたたみ:${subtree(map, n).length - 1}`);
+      if (n.url) marks.push('リンク:' + n.url);
       line += `  (${n.id}${marks.length ? ' ' + marks.join(' ') : ''})`;
     }
     lines.push(line);
@@ -260,7 +312,7 @@ export function outline(map: MindMap, { withIds = false, from = null }: { withId
   for (const start of from ? [from] : roots(map)) {
     if (!start.parentId && !withIds) {
       if (lines.length) lines.push('');
-      lines.push('# ' + start.text);
+      lines.push('# ' + linkText(start));
       for (const id of start.children) walk(byId.of(id), 0);
     } else walk(start, 0);
   }
@@ -278,7 +330,7 @@ export function parseOutline(text: string): { trees: OutlineItem[]; headed: bool
     if (!raw.trim()) continue;
     const h = raw.match(/^#\s+(.+?)\s*$/);
     if (h) {
-      const item: OutlineItem = { text: h[1], children: [] };
+      const item: OutlineItem = { ...splitLink(h[1]), children: [] };
       trees.push(item); headed = true;
       stack = [{ indent: -1, children: item.children }];
       continue;
@@ -286,7 +338,7 @@ export function parseOutline(text: string): { trees: OutlineItem[]; headed: bool
     const m = raw.match(/^(\s*)(?:[-*+]|\d+[.)])\s+(.*?)\s*$/);
     if (!m) throw new Error(`箇条書きとして読めない行があります: ${raw}`);
     const indent = m[1].replace(/\t/g, '    ').length;
-    const item: OutlineItem = { text: m[2], children: [] };
+    const item: OutlineItem = { ...splitLink(m[2]), children: [] };
     while (stack[stack.length - 1].indent >= indent) stack.pop();
     stack[stack.length - 1].children.push(item);
     stack.push({ indent, children: item.children });
@@ -297,7 +349,7 @@ export function parseOutline(text: string): { trees: OutlineItem[]; headed: bool
 export function addTree(map: MindMap, parent: MapNode, items: OutlineItem[]): number {
   let count = 0;
   for (const it of items) {
-    const n = addChild(map, parent, it.text);
+    const n = addChild(map, parent, it.text, { url: it.url });
     count += 1 + addTree(map, n, it.children);
   }
   return count;
@@ -306,6 +358,6 @@ export function addTree(map: MindMap, parent: MapNode, items: OutlineItem[]): nu
 /** 木の並びを、それぞれ独立したマップとして足す。 */
 export function addRoots(map: MindMap, trees: OutlineItem[]): number {
   let count = 0;
-  for (const t of trees) count += 1 + addTree(map, addRoot(map, t.text), t.children);
+  for (const t of trees) count += 1 + addTree(map, addRoot(map, t.text, t.url), t.children);
   return count;
 }

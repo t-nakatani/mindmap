@@ -37,7 +37,7 @@ node cli.ts share remove someone@example.com
 ## マップは複数ある
 
 マップは名前で区別します。画面と CLI は「今選んでいるマップ」を対象にします。
-画面のツールバー左端のセレクトと CLI の `use` は同じ選択を動かすので、人が画面で切り替えればエージェントの対象も変わり、逆も同じです。
+画面の左上のセレクトと CLI の `use` は同じ選択を動かすので、人が画面で切り替えればエージェントの対象も変わり、逆も同じです。
 
 ```sh
 node cli.ts maps                       # 一覧。* が今選んでいるマップ
@@ -95,6 +95,20 @@ node cli.ts move 採用 --under 予算                      # 中心ノードを
 
 `add` で `--under` を省くと、中心ノードが1つのときはその下に入ります。中心ノードが複数あるときは `--under` か `--root` が必要です。
 
+## リンク
+
+ノードには URL を1つ付けられます。画面では、サイトのアイコン・ページの題名・↗ の1行で表示され、↗ で開けます。
+
+```sh
+node cli.ts add https://developers.cloudflare.com/durable-objects/ --under 参考資料   # 題名を読み込んで文字にする
+node cli.ts add "設計メモ" --url https://example.com/memo --under 参考資料            # 文字を決めて付ける
+node cli.ts link 予算 https://example.com/budget                                     # 今あるノードに付ける（文字はそのまま）
+node cli.ts unlink 予算
+```
+
+`show` では `(n5 リンク:https://…)` と出ます。`export` と `import` では `- [文字](URL)` と書き、URL だけの行もリンクになります（題名を読み込みます）。
+URL は `http://` か `https://` で始まるものだけです。人が付けた文字は、題名で上書きしません。
+
 ## まとめて入れる: Markdown の箇条書き
 
 骨組みを一気に作るときは、箇条書きを書いて取り込みます。インデント（スペース2つ以上かタブ）が階層です。`-`、`*`、`+`、`1.` を使えます。
@@ -131,6 +145,7 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 
 ## 中身（変更するとき）
 
+- 画面のデザインは Figma の [Mind Map — UI](https://www.figma.com/design/qOSm5azBhDhv6g30qS23aS) が正。色・余白・角丸は Figma の変数と同じ名前の CSS 変数（`:root` の `--color-*`・`--space-*`・`--radius-*`）だけを使い、値を直接書かない。画面を変えるときは Figma の Screens と Components を先に直す（Figma の MCP で読み書きできる）。
 - `public/index.html`: ページ。1ファイルで依存なし。読み書きは `/api/map`（版番号つき）、変更は `/api/ws`（WebSocket）で受ける。共有された領域は `?space=` を付けて開き、閲覧のみになる。
 - `src/worker.ts`: 入口。ページは静的アセット（`public/`）が配る。`/api/` は、名簿 `main` で権限を確かめてから、領域の Durable Object へ渡す。
 - `src/auth.ts`: Google ログイン（ブラウザ）と API トークン（CLI）の確認。セッションはアカウント ID を持つ。名簿 `main` の中で動く。
@@ -140,8 +155,10 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 - `lib/ops.ts`: CLI の操作（add・move など）を、名前の解決ごとマップに当てる。Durable Object が呼ぶ。
 - `cli.ts`: コマンドの入口。`node cli.ts` でそのまま動く（Node 23.6 以上）。
 - `cloudflare.config.ts`: Worker・binding・Durable Object・secret の宣言と、デプロイ先のアカウント。`wrangler.config.ts`: 静的アセットの置き場と手元の開発サーバーのポート。
-- 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed }], boards: [{ id, name, x, y, w, h }] }`。版番号はマップごとに書き込むたびに1つ上がる。
+- `src/unfurl.ts`: リンクの展開。ページの `<head>` を読んで、題名・サイト名・説明・画像・アイコンを返す（`GET /api/unfurl?url=`）。手元やネットワーク内のアドレスは、手元の開発（領域 `local`）でだけ読む。
+- 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed, url? }], boards: [{ id, name, x, y, w, h }] }`。版番号はマップごとに書き込むたびに1つ上がる。
   `boards` は画面で作るボード（四角い区画、`x, y` は左上）。中のマップは持たず、画面で動かすときに中心ノードの位置で決める。CLI の操作は `boards` に触れずにそのまま残す。
+  リンクのあるノードは `url`（http か https）を持つ。リンク先の題名・説明・画像・アイコンは保存せず、`/api/unfurl` が領域ごとに1週間覚えておく。
   `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置、`layout` は配置（`both`・`right`・`left`、省略時は `both`）。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
   中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。
 - 型の確認は `npm run typecheck`。
