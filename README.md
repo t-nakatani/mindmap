@@ -53,14 +53,14 @@ mise exec -- npx cf deploy --dry-run   # 何も上げずに、ビルドと bindi
 npm run deploy                         # https://mindmap.tomoya-12.workers.dev
 ```
 
-ログインは Knowledge Box と同じ形にした。ブラウザは Google でログインし（OpenID Connect、PKCE・state・nonce つき）、
-確認済みのメールアドレスが `ALLOWED_EMAILS` にあればセッションの cookie を出す。CLI とエージェントは `API_TOKEN` を
+ログインは Google の OpenID Connect（PKCE・state・nonce つき）で、確認済みのメールアドレスなら誰でもセッションの cookie を出す。
+初めてのログインで、その人のアカウントと空の領域ができる。ほかの人のマップは、共有されない限り見えない。CLI とエージェントは `API_TOKEN` を
 `Authorization: Bearer` に付ける。設定はすべて Worker の secret で入れる。
 
 - `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`: Google Cloud の OAuth クライアント（ウェブ アプリケーション）
-- `ALLOWED_EMAILS`: ログインを通すアドレス。カンマ区切り
 - `API_TOKEN`: CLI 用。長い乱数にする
 - `OWNER_EMAIL`: `API_TOKEN` が動く人。領域を分ける前のマップも、この人の領域へ移る
+- `ALLOWED_EMAILS`: ログインの許可リストではない。`OWNER_EMAIL` が空で、ここにアドレスが1つだけあるとき、その人を API トークンの持ち主にする
 
 ### 領域と共有
 
@@ -68,7 +68,7 @@ npm run deploy                         # https://mindmap.tomoya-12.workers.dev
 `a_…` の ID で、領域は `s_…` の ID で区別する。メールアドレスは表示と共有の指定にだけ使うので、Google 側でアドレスを変えても領域はそのまま残る。
 
 - 名簿は Durable Object `main` にある（アカウント・領域・共有・セッション）。領域のマップは Durable Object `space:<領域ID>` に入る。
-- 自分の領域は、画面の「共有」か `node cli.ts share add <メール>` で、ほかのアカウントに読み取り専用で見せられる。相手は `ALLOWED_EMAILS` にある人に限る。まだ一度もログインしていない人にも共有でき、その人が初めてログインしたときに結び付く。
+- 自分の領域は、画面の「共有」か `node cli.ts share add <メール>` で、ほかのアカウントに読み取り専用で見せられる。相手のメールアドレスに制限はない。まだ一度もログインしていない人にも共有でき、その人が初めてログインしたときに結び付く。
 - 共有された人は、画面の左上の、マップのセレクトの左に出る領域のセレクトで切り替えて閲覧する。書き込みはサーバーが断る。共有を外すと、開いている画面は自分の領域に戻る。
 - 領域を分ける前に `main` に入っていたマップは、`OWNER_EMAIL` の人が初めて開いたとき（ログインか API トークン）に、その人の領域へ一度だけ写る。`main` の元の行は控えとして残る。
 - 領域を分けたときにセッションの形が変わったので、デプロイ後は一度ログインし直す。

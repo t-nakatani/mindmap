@@ -28,7 +28,7 @@ API トークンは `OWNER_EMAIL` の人として動き、その人の領域を�
 node cli.ts spaces # 開ける領域。* が自分の領域、ほかは共有されたもの（閲覧のみ）
 node cli.ts show --space s_xxxxxxxxxxxx # 共有された領域を読む（maps・show・export だけ）
 node cli.ts share # 自分の領域を共有している相手
-node cli.ts share add someone@example.com # 読み取り専用で共有する（ALLOWED_EMAILS にある人だけ）
+node cli.ts share add someone@example.com # 読み取り専用で共有する（メールアドレスなら誰でも。初回ログインで結び付く）
 node cli.ts share remove someone@example.com
 ```
 
