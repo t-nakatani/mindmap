@@ -204,6 +204,39 @@
     border-top: 1px solid var(--color-border-panel); color: var(--color-text-secondary); font-size: 12px; }
   #account > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #share-panel { width: min(340px, calc(100% - 32px)); }
+  /* マップの一覧（Figma: Panel/Maps・Map row）。左上のマップ名（Select）の下に出す */
+  #map-btn { min-width: 0; max-width: 260px; padding: 0 var(--space-8) 0 10px; font-weight: 500; }
+  #map-btn-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #map-btn .icon { color: var(--color-text-secondary); }
+  #map-btn[aria-expanded="true"], #map-btn[aria-expanded="true"] .icon { background: var(--color-bg-accent-subtle); color: var(--color-text-accent); }
+  #map-btn[aria-expanded="true"] .icon { background: transparent; }
+  #map-menu { left: 16px; right: auto; top: 66px; width: min(380px, calc(100% - 32px)); padding: var(--space-8); gap: var(--space-4); }
+  .menu-search { position: relative; display: flex; margin-bottom: var(--space-4); }
+  .menu-search .icon { position: absolute; left: 10px; top: 8px; color: var(--color-text-secondary); pointer-events: none; }
+  .menu-search .input { padding-left: 34px; }
+  #map-list { display: flex; flex-direction: column; gap: var(--space-2); overflow: auto; max-height: min(420px, calc(100vh - 220px)); }
+  .map-row { display: flex; align-items: center; gap: var(--space-8); min-height: 44px; box-sizing: border-box;
+    padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8); border-radius: var(--radius-md); cursor: pointer; }
+  .map-row.active, .map-row.editing, .map-row.confirming { background: var(--color-bg-hover); }
+  .map-row.editing, .map-row.confirming { cursor: default; }
+  .map-row > .icon { color: var(--color-text-accent); visibility: hidden; }
+  .map-row.current > .icon { visibility: visible; }
+  .map-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .map-name, .map-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .map-name { font-size: 13px; line-height: 18px; font-weight: 500; }
+  .map-row.current .map-name { color: var(--color-text-accent); }
+  .map-sub { color: var(--color-text-secondary); font-size: 12px; line-height: 16px; }
+  .map-sub:empty { display: none; }
+  .map-actions { display: none; gap: var(--space-2); }
+  .map-row.active .map-actions, .map-row:focus-within .map-actions { display: flex; }
+  .map-actions .icon-btn { color: var(--color-text-secondary); }
+  .map-actions .icon-btn:hover { color: var(--color-text-primary); }
+  .btn-danger, .btn-danger:hover { color: var(--color-text-danger); font-weight: 500; }
+  .menu-empty { padding: var(--space-12) var(--space-8); color: var(--color-text-secondary); font-size: 12px; }
+  #map-footer { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--color-border-panel); }
+  #map-footer .btn { width: 100%; justify-content: flex-start; padding: 0 var(--space-8); }
+  #map-footer .map-row { min-height: var(--size-control); padding: 0 0 0 var(--space-8); }
+  #map-footer .map-row > .icon { visibility: visible; color: var(--color-text-primary); }
   /* リンクのパネル（Figma: Panel/Link・Panel/Link edit）。ノードのそばに出すので、位置は transform で決める */
   #link-panel, #link-edit { left: 0; top: 0; right: auto; z-index: 2; width: min(340px, calc(100% - 16px)); max-height: none;
     padding: var(--space-12) var(--space-12) var(--space-8); gap: var(--space-8); }
@@ -253,6 +286,7 @@
     #nav { left: 12px; top: 12px; max-width: calc(100% - 24px - 128px); }
     #actions { right: 12px; top: 12px; }
     .popover { right: 12px; top: 62px; width: calc(100% - 24px); }
+    #map-menu { left: 12px; right: 12px; width: auto; }
     .select { max-width: 160px; }
   }
 </style>
@@ -274,6 +308,9 @@
   <symbol id="i-external" viewBox="0 0 16 16"><path d="M9.5 2.5h4v4M13.5 2.5L8 8M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3"/></symbol>
   <symbol id="i-globe" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.7 1.7 2.6 3.8 2.6 6.25S9.7 12.55 8 14.25C6.3 12.55 5.4 10.45 5.4 8S6.3 3.45 8 1.75z"/></symbol>
   <symbol id="i-edit" viewBox="0 0 16 16"><path d="M10.6 2.6l2.8 2.8L6 12.8H3.2V10z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 16 16"><path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.6 8.6a1 1 0 0 0 1 .9h4.3a1 1 0 0 0 1-.9l.6-8.6M6.75 6.75v4.5M9.25 6.75v4.5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.25"/><path d="M10.25 10.25l3.25 3.25"/></symbol>
   <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.75 8S4 3.5 8 3.5 14.25 8 14.25 8 12 12.5 8 12.5 1.75 8 1.75 8z"/><circle cx="8" cy="8" r="2"/></symbol>
   <symbol id="i-logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#24262d"/><g fill="none" stroke-width="5" stroke-linecap="round"><path d="M28 32H22Q16 32 16 24V18H12" stroke="#e9a21a"/><path d="M36 32H42Q48 32 48 24V16H52" stroke="#3fa34d"/><path d="M36 32H42Q48 32 48 40V48H52" stroke="#7c5cde"/><path d="M28 32H22Q16 32 16 40V46H12" stroke="#e4572e"/></g><rect x="6" y="12" width="14" height="10" rx="4" fill="#e9a21a"/><rect x="44" y="10" width="14" height="10" rx="4" fill="#3fa34d"/><rect x="44" y="44" width="14" height="10" rx="4" fill="#7c5cde"/><rect x="6" y="42" width="14" height="10" rx="4" fill="#e4572e"/><rect x="22" y="22" width="20" height="20" rx="7" fill="#6ea2ff" stroke="#24262d" stroke-width="3"/></symbol>
 </svg>
@@ -295,8 +332,16 @@
   <span class="mark" aria-hidden="true"><svg><use href="#i-logo"/></svg></span>
   <span class="select-wrap" hidden><select id="space-select" class="select" title="領域を切り替える"></select><svg class="icon"><use href="#i-chevron-down"/></svg></span>
   <span id="space-sep" class="divider" hidden></span>
-  <span class="select-wrap"><select id="map-select" class="select" title="マップを切り替える"></select><svg class="icon"><use href="#i-chevron-down"/></svg></span>
+  <button id="map-btn" class="btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="マップを切り替える"><span id="map-btn-name">マップ</span><svg class="icon"><use href="#i-chevron-down"/></svg></button>
   <button id="btn-add-map" class="icon-btn edit-only" title="マップを追加" aria-label="マップを追加"><svg class="icon"><use href="#i-plus"/></svg></button>
+</div>
+
+<!-- マップの一覧（Figma: Panel/Maps）。左上のマップ名から開く。探す・切り替える・名前を変える・削除する・作る -->
+<div id="map-menu" class="popover" role="dialog" aria-label="マップ">
+  <div class="menu-search"><svg class="icon"><use href="#i-search"/></svg><input id="map-search" class="input" type="text" placeholder="マップを探す" autocomplete="off" spellcheck="false"></div>
+  <div id="map-list" role="listbox" aria-label="マップの一覧"></div>
+  <div id="map-error" class="error"></div>
+  <div id="map-footer" class="edit-only"></div>
 </div>
 
 <!-- 右上: 共有とヘルプ（Figma: Toolbar/Actions） -->
@@ -537,7 +582,6 @@
   let lastSaved = '', saveTimer = null, inflight = null, mapName = null, version = 0;
   let spaceId = null, readOnly = false;
   const SPACE_KEY = 'mindmap-space';
-  const mapSelect = document.getElementById('map-select');
   const spaceSelect = document.getElementById('space-select');
   function query(params = {}) {
     const p = new URLSearchParams();
@@ -573,20 +617,26 @@
       } else if (r.status === 409 && body.map && body.version > version) applyExternal(body.map, body.version);
     } catch (e) { /* サーバーなし */ } finally { inflight = null; }
   }
+  // ---------- マップの一覧（Figma: Panel/Maps・Map row） ----------
+  // 左上のマップ名から開く。探す・切り替える・名前を変える・削除する・作る。一覧はサーバーの /api/maps（WebSocket の maps でも届く）。
+  // 名前の変更と削除は、ほかの画面にも WebSocket の renamed・deleted で届く。閲覧のみの領域では切り替えだけできる。
+  const mapBtn = document.getElementById('map-btn'), mapBtnName = document.getElementById('map-btn-name');
+  const mapMenu = document.getElementById('map-menu'), mapSearch = document.getElementById('map-search');
+  const mapList = document.getElementById('map-list'), mapError = document.getElementById('map-error'), mapFooter = document.getElementById('map-footer');
+  let mapsList = [];
+  // active: ↑↓ とポインタで当たっている行。renaming・confirming: 名前を変えている・削除を確かめているマップ。creating: 下で新しいマップの名前を入れている
+  const menu = { active: 0, items: [], renaming: null, confirming: null, creating: false };
+  const icon = id => `<svg class="icon"><use href="#i-${id}"/></svg>`;
   function setMapName(name) {
     mapName = name || null;
     document.title = mapName ? `${mapName} - Mind Map` : 'Mind Map';
-    if (mapSelect.value !== (mapName || '')) mapSelect.value = mapName || '';
+    mapBtnName.textContent = mapName || 'マップ';
+    if (isMapMenuOpen() && !menu.renaming && !menu.creating) renderMapMenu();
   }
   function renderMaps(list) {
-    mapSelect.innerHTML = '';
-    for (const m of list.maps || []) {
-      const o = document.createElement('option');
-      o.value = m.name;
-      o.textContent = m.title && m.title !== m.name ? `${m.name} — ${m.title}` : m.name;
-      mapSelect.appendChild(o);
-    }
-    mapSelect.value = mapName || list.current || '';
+    mapsList = list.maps || [];
+    // 名前を入れている途中は描き直さない（入力が消えないように）
+    if (isMapMenuOpen() && !menu.renaming && !menu.creating) renderMapMenu();
   }
   async function refreshMaps() {
     try { const r = await fetch('/api/maps' + query()); if (r.ok) { const list = await r.json(); renderMaps(list); return list; } } catch (e) { /* サーバーなし */ }
@@ -606,23 +656,188 @@
     selectedId = roots()[0] ? roots()[0].id : null;
     layout(); syncDom(); fitView();
   }
-  mapSelect.addEventListener('change', () => {
-    const name = mapSelect.value; mapSelect.blur();
+  function isMapMenuOpen() { return mapMenu.classList.contains('show'); }
+  // 要約は中心ノードの文字を並べたもの。名前と同じなら出さない
+  const summaryOf = m => m.title && m.title !== m.name ? m.title : '';
+  function div(cls, text) { const d = document.createElement('div'); d.className = cls; if (text != null) d.textContent = text; return d; }
+  function button(cls, act, html, label) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.dataset.act = act; b.innerHTML = html;
+    if (label) { b.title = label; b.setAttribute('aria-label', label); }
+    return b;
+  }
+  function renderMapMenu() {
+    const q = mapSearch.value.trim().toLowerCase();
+    menu.items = mapsList.filter(m => !q || m.name.toLowerCase().includes(q) || (m.title || '').toLowerCase().includes(q));
+    menu.active = Math.max(0, Math.min(menu.active, menu.items.length - 1));
+    mapList.innerHTML = '';
+    if (!menu.items.length) mapList.appendChild(div('menu-empty', q ? '見つかりません' : 'マップがありません'));
+    menu.items.forEach((m, i) => {
+      const editing = menu.renaming === m.name, confirming = menu.confirming === m.name;
+      const row = div('map-row' + (m.name === mapName && !editing && !confirming ? ' current' : '') + (i === menu.active ? ' active' : '')
+        + (editing ? ' editing' : '') + (confirming ? ' confirming' : ''));
+      row.dataset.i = i; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(m.name === mapName));
+      row.innerHTML = icon('check');
+      if (editing) {
+        const input = document.createElement('input');
+        input.className = 'input map-rename'; input.value = m.name; input.spellcheck = false; input.autocomplete = 'off';
+        input.setAttribute('aria-label', 'マップの名前');
+        row.appendChild(input);
+      } else if (confirming) {
+        const text = div('map-text');
+        text.append(div('map-name', `「${m.name}」を削除しますか？`), div('map-sub', '元に戻せません'));
+        row.append(text, button('btn', 'cancel', 'やめる'), button('btn btn-danger', 'delete', '削除'));
+      } else {
+        const text = div('map-text');
+        text.append(div('map-name', m.name), div('map-sub', summaryOf(m)));
+        row.appendChild(text);
+        if (!readOnly) {
+          const actions = div('map-actions');
+          actions.appendChild(button('icon-btn', 'rename', icon('edit'), '名前を変える'));
+          if (mapsList.length > 1) actions.appendChild(button('icon-btn', 'confirm', icon('trash'), '削除'));
+          row.appendChild(actions);
+        }
+      }
+      mapList.appendChild(row);
+    });
+    renderMapFooter();
+  }
+  function renderMapFooter() {
+    mapFooter.innerHTML = '';
+    if (menu.creating) {
+      const row = div('map-row editing'); row.innerHTML = icon('plus');
+      const input = document.createElement('input');
+      input.className = 'input map-new'; input.placeholder = '新しいマップの名前'; input.spellcheck = false; input.autocomplete = 'off';
+      row.appendChild(input); mapFooter.appendChild(row);
+    } else mapFooter.appendChild(button('btn', 'new', icon('plus') + '<span>新しいマップ</span>'));
+  }
+  function showActive() {
+    for (const r of mapList.children) r.classList.toggle('active', Number(r.dataset.i) === menu.active);
+    const r = mapList.querySelector('.map-row.active');
+    if (r) r.scrollIntoView({ block: 'nearest' });
+  }
+  function resetMenuModes() { menu.renaming = null; menu.confirming = null; menu.creating = false; mapError.textContent = ''; }
+  function openMapMenu() {
+    finishEdit(); finishBoardEdit(); closeLinkEditor();
+    resetMenuModes();
+    mapSearch.value = '';
+    mapMenu.classList.add('show'); mapBtn.setAttribute('aria-expanded', 'true');
+    menu.active = Math.max(0, mapsList.findIndex(m => m.name === mapName));
+    renderMapMenu(); showActive();
+    mapSearch.focus();
+    refreshMaps();
+  }
+  function closeMapMenu() {
+    if (!isMapMenuOpen()) return false;
+    mapMenu.classList.remove('show'); mapBtn.setAttribute('aria-expanded', 'false');
+    resetMenuModes();
+    if (mapMenu.contains(document.activeElement)) document.activeElement.blur();
+    return true;
+  }
+  // Esc は、名前の入力中・削除の確認中ならそれをやめる。そうでなければ閉じる
+  function mapMenuEscape() {
+    if (!isMapMenuOpen()) return false;
+    if (menu.renaming || menu.confirming || menu.creating) { resetMenuModes(); renderMapMenu(); mapSearch.focus(); return true; }
+    return closeMapMenu();
+  }
+  function pickMap(name) {
+    closeMapMenu();
     if (!name || name === mapName) return;
     // 閲覧のみの領域では、持ち主の選択は動かさずに自分の画面だけ切り替える
     if (!readOnly) fetch('/api/current' + query(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => {});
     switchTo(name);
-  });
-  document.getElementById('btn-add-map').addEventListener('click', async () => {
-    if (readOnly) return;
-    const name = (prompt('新しいマップの名前') || '').trim();
-    if (!name) return;
+  }
+  async function mapsRequest(method, payload) {
+    mapError.textContent = '';
     try {
-      const r = await fetch('/api/maps' + query(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, title: name, select: true }) });
+      const r = await fetch('/api/maps' + query(), { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const body = await r.json();
-      if (!r.ok) { alert(body.error || '作れませんでした'); return; }
-      await refreshMaps(); await switchTo(body.name);
-    } catch (e) { alert('サーバーに届きませんでした'); }
+      if (r.status === 401) { showLogin(); return null; }
+      if (!r.ok) { mapError.textContent = body.error || 'うまくいきませんでした'; return null; }
+      return body;
+    } catch (e) { mapError.textContent = 'サーバーに届きませんでした'; return null; }
+  }
+  // 開いているマップの書きかけを、先に送り切る（名前を変える前に）
+  async function flushNow() {
+    clearTimeout(saveTimer); saveTimer = null;
+    while (inflight !== null) await new Promise(r => setTimeout(r, 30));
+    await flush();
+  }
+  function startRename(name) {
+    resetMenuModes(); menu.renaming = name; renderMapMenu();
+    const input = mapList.querySelector('.map-rename'); input.focus(); input.select();
+  }
+  async function renameMap(from, value) {
+    const to = value.trim();
+    if (!to || to === from) { resetMenuModes(); renderMapMenu(); mapSearch.focus(); return; }
+    if (from === mapName) await flushNow();
+    const body = await mapsRequest('PATCH', { name: from, newName: to });
+    if (!body) { const input = mapList.querySelector('.map-rename'); if (input) input.focus(); return; }
+    menu.renaming = null;
+    if (mapName === from) setMapName(body.name);
+    menu.active = Math.max(0, mapsList.findIndex(m => m.name === from));
+    await refreshMaps(); renderMapMenu(); mapSearch.focus();
+  }
+  async function deleteMap(name) {
+    const body = await mapsRequest('DELETE', { name });
+    menu.confirming = null;
+    if (body && name === mapName && body.current) await switchTo(body.current);
+    await refreshMaps(); renderMapMenu(); mapSearch.focus();
+  }
+  function startCreate() {
+    resetMenuModes(); menu.creating = true; renderMapMenu();
+    mapFooter.querySelector('.map-new').focus();
+  }
+  async function createMap(value) {
+    const name = value.trim(); if (!name) return;
+    const body = await mapsRequest('POST', { name, title: name, select: true });
+    if (!body) { const input = mapFooter.querySelector('.map-new'); if (input) input.focus(); return; }
+    closeMapMenu();
+    await refreshMaps(); await switchTo(body.name);
+  }
+  mapBtn.addEventListener('click', () => { if (isMapMenuOpen()) closeMapMenu(); else openMapMenu(); });
+  document.getElementById('btn-add-map').addEventListener('click', () => {
+    if (readOnly) return;
+    if (!isMapMenuOpen()) openMapMenu();
+    startCreate();
+  });
+  // メニューの外を押したら閉じる
+  document.addEventListener('pointerdown', e => {
+    if (isMapMenuOpen() && !mapMenu.contains(e.target) && !mapBtn.contains(e.target) && !e.target.closest('#btn-add-map')) closeMapMenu();
+  }, true);
+  mapSearch.addEventListener('input', () => { resetMenuModes(); menu.active = 0; renderMapMenu(); });
+  mapList.addEventListener('pointermove', e => {
+    const row = e.target.closest('.map-row');
+    if (row && Number(row.dataset.i) !== menu.active && !menu.renaming && !menu.confirming) { menu.active = Number(row.dataset.i); showActive(); }
+  });
+  mapList.addEventListener('click', e => {
+    const row = e.target.closest('.map-row'); if (!row) return;
+    const m = menu.items[Number(row.dataset.i)]; if (!m) return;
+    const act = e.target.closest('[data-act]');
+    if (!act) { if (!row.classList.contains('editing') && !row.classList.contains('confirming')) pickMap(m.name); return; }
+    const a = act.dataset.act;
+    menu.active = Number(row.dataset.i); // 名前の変更・削除の確認をしている行だけを強調する
+    if (a === 'rename') startRename(m.name);
+    else if (a === 'confirm') { resetMenuModes(); menu.confirming = m.name; renderMapMenu(); mapList.querySelector('[data-act=cancel]').focus(); }
+    else if (a === 'cancel') { resetMenuModes(); renderMapMenu(); mapSearch.focus(); }
+    else if (a === 'delete') deleteMap(m.name);
+  });
+  mapFooter.addEventListener('click', e => { if (e.target.closest('[data-act=new]')) startCreate(); });
+  mapMenu.addEventListener('keydown', e => {
+    // 日本語入力の変換中の Enter は IME に任せる
+    if (e.isComposing || e.keyCode === 229) return;
+    const t = e.target;
+    if (t.classList.contains('map-rename')) { if (e.key === 'Enter') { e.preventDefault(); renameMap(menu.renaming, t.value); } return; }
+    if (t.classList.contains('map-new')) { if (e.key === 'Enter') { e.preventDefault(); createMap(t.value); } return; }
+    if (t !== mapSearch) return;
+    const n = menu.items.length;
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && n) {
+      e.preventDefault();
+      menu.active = (menu.active + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
+      showActive();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const m = menu.items[menu.active]; if (m) pickMap(m.name);
+    }
   });
   async function loadInitial() {
     try {
@@ -726,7 +941,7 @@
   document.getElementById('btn-help-close').addEventListener('click', () => setPanel('help', false));
   // Esc はノードの選択を外す前に、開いているパネルを閉じる。文字の編集中は編集のほうを取りやめる。
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !editingId && !editingBoardId && !e.isComposing && (closeLinkEditor() || closePanels())) { e.preventDefault(); e.stopImmediatePropagation(); }
+    if (e.key === 'Escape' && !editingId && !editingBoardId && !e.isComposing && (mapMenuEscape() || closeLinkEditor() || closePanels())) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
   document.getElementById('share-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -752,6 +967,8 @@
         if (msg.type === 'map') onRemoteMap(msg);
         else if (msg.type === 'current') { if (!readOnly && msg.name && msg.name !== mapName) switchTo(msg.name); }
         else if (msg.type === 'maps') renderMaps(msg);
+        else if (msg.type === 'renamed') { if (msg.from === mapName) setMapName(msg.to); }
+        else if (msg.type === 'deleted') { if (msg.name === mapName && msg.current) switchTo(msg.current); }
         else if (msg.type === 'revoked') openSpace(null);
       };
       ws.onclose = async e => {
@@ -1117,7 +1334,7 @@
   }
   // 文字の編集中や入力欄、ページの文字を選んでいるときは、ふつうの文字のコピー・貼り付けにする。
   function textClipboard(e) {
-    if (editingId || e.target === mapSelect || (e.target.closest && e.target.closest('input, textarea, .popover'))) return true;
+    if (editingId || (e.target.closest && e.target.closest('input, textarea, .popover'))) return true;
     const s = window.getSelection();
     return !!(s && !s.isCollapsed && !editor.contains(s.anchorNode));
   }
@@ -1986,7 +2203,7 @@
     requestDraw();
   }
   window.addEventListener('keydown', e => {
-    if (e.target === mapSelect || e.target === spaceSelect || (e.target.closest && e.target.closest('.popover'))) return;
+    if (e.target === spaceSelect || (e.target.closest && e.target.closest('.popover'))) return;
     const meta = e.metaKey || e.ctrlKey;
     if (editingId) {
       // 日本語入力の変換中や確定の Enter・Esc・Tab は IME に任せる。Safari は確定の Enter で isComposing が false になるので keyCode も見る
