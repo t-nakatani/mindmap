@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# mindmap の検証用ハーネス。ふだんの開発サーバー（4381、.wrangler/state）には触れず、
+# 別のポートと使い捨てのデータの置き場で Worker を立て、Rust の CLI と headless Chrome で動かして証拠を残す。
+#
+#   verify build                 CLI をビルドする（target/release/mindmap）
+#   verify serve                 検証用サーバーを前面で動かす（preview_start や launch.json から使う）
+#   verify launch                検証用サーバーを裏で立て、応答するまで待つ
+#   verify doctor                このインスタンスを動かしてよいかを読むだけで確かめる
+#   verify cli <引数...>         検証用サーバーに向けて CLI を動かし、コマンド・出力・終了コードを証拠に残す
+#   verify api <METHOD> <パス> [JSON]
+#                                API を直接読む（状態の確認用）。結果も証拠に残す
+#   verify shot <名前>           headless Chrome で画面を撮る（<証拠>/<名前>.png）
+#   verify dom <名前>            headless Chrome で描いた後のノード一覧を書き出す（<証拠>/<名前>.nodes.txt）
+#   verify evidence              証拠の置き場を出す
+#   verify cleanup               自分が立てたサーバーを止め、使い捨てのデータを消す（証拠は残す）
+#
+# 環境変数: VERIFY_PORT（既定 4388）、VERIFY_RUN（証拠の置き場の名前。既定は launch / serve のときの時刻）
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+PORT="${VERIFY_PORT:-4388}"
+URL="http://127.0.0.1:$PORT"
+SCRATCH="${TMPDIR:-/tmp}"
+SCRATCH="${SCRATCH%/}/verify-mindmap-$PORT"   # 使い捨て: サーバーのデータ・pid・ログ・CLI の HOME
+WORK="$SCRATCH/work"            # cf dev を立てる使い捨てのフォルダ
+STATE="$WORK/.wrangler/state"   # 検証用サーバーのデータ
+PIDFILE="$SCRATCH/server.pid"
+LOG="$SCRATCH/server.log"
+CLI_HOME="$SCRATCH/home"
+RUNFILE="$SCRATCH/run"
+BIN="$REPO/target/release/mindmap"
+CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+
+die() { echo "verify: $*" >&2; exit 1; }
+
+run_id() {
+  if [ -n "${VERIFY_RUN:-}" ]; then echo "$VERIFY_RUN"; return; fi
+  if [ -f "$RUNFILE" ]; then cat "$RUNFILE"; return; fi
+  die "まだ launch / serve していません（証拠の置き場が決まっていない）。VERIFY_RUN を渡すか launch してください"
+}
+evidence_dir() { local d="$REPO/.verify/evidence/$(run_id)"; mkdir -p "$d"; echo "$d"; }
+new_run() {
+  mkdir -p "$SCRATCH"
+  echo "${VERIFY_RUN:-$(date +%Y%m%d-%H%M%S)}" > "$RUNFILE"
+}
+answering() { curl -fsS -m 2 "$URL/api/auth/me" >/dev/null 2>&1; }
+port_pid() { lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1; }
+
+cmd_build() { (cd "$REPO" && cargo build --release -q) && "$BIN" --version; }
+
+cmd_serve() {
+  [ -z "$(port_pid)" ] || die "ポート $PORT はもう使われています（pid $(port_pid)）。別の VERIFY_PORT を使うか、自分が立てたものなら cleanup してください"
+  [ -f "$RUNFILE" ] || new_run
+  # cf dev はデータの置き場を変えられない（--persist-to を受け付けず、いつも設定ファイルの隣の .wrangler/state に置く）。
+  # そこで、使い捨てのフォルダ WORK に設定ファイルの写しとソースへのリンクを並べ、そこから立てる。
+  # データは WORK/.wrangler/state に入り、ふだんの開発サーバーのデータ（リポジトリの .wrangler/state）には触れない。
+  # 設定ファイルはリンクではなく写しにする（リンクだと、置き場がリポジトリ側に決まるおそれがある）。.dev.vars は持ち込まない（認証なしの手元モードになる）。
+  rm -rf "$WORK"; mkdir -p "$WORK"
+  cp "$REPO/wrangler.config.ts" "$REPO/cloudflare.config.ts" "$WORK/"
+  # ポートも cf dev -- --port では変わらない（wrangler.config.ts の dev.port が勝つ）。写しの方を書き換える
+  sed -i '' -E "s/port: [0-9]+/port: $PORT/" "$WORK/wrangler.config.ts"
+  grep -q "port: $PORT," "$WORK/wrangler.config.ts" || die "wrangler.config.ts の写しの dev.port を $PORT にできませんでした"
+  for f in package.json tsconfig.json node_modules src lib public; do ln -s "$REPO/$f" "$WORK/$f"; done
+  local node; node="$(cd "$REPO" && mise which node)" || die "mise で node が見つかりません（リポジトリの mise.toml を確かめる）"
+  cd "$WORK"
+  PATH="$(dirname "$node"):$PATH" exec npx cf dev
+}
+
+cmd_launch() {
+  [ -z "$(port_pid)" ] || die "ポート $PORT はもう使われています（pid $(port_pid)）。自分が立てたものでなければ動かさないでください"
+  new_run
+  set -m   # 裏のジョブを自分のプロセスグループにする（cleanup でグループごと止める）
+  nohup "${BASH_SOURCE[0]}" serve > "$LOG" 2>&1 &
+  echo $! > "$PIDFILE"
+  set +m
+  for _ in $(seq 1 120); do
+    if answering; then echo "ready: $URL（run $(run_id)、ログ $LOG）"; return; fi
+    kill -0 "$(cat "$PIDFILE")" 2>/dev/null || { tail -20 "$LOG" >&2; die "サーバーが起動の途中で止まりました"; }
+    sleep 1
+  done
+  tail -20 "$LOG" >&2; die "120 秒待っても $URL が応答しません"
+}
+
+cmd_doctor() {
+  local bad=0
+  ok() { echo "OK  $*"; }
+  ng() { echo "NG  $*"; bad=1; }
+  if answering; then ok "サーバーが応答する: $URL"; else ng "サーバーが応答しない: $URL（launch するか preview_start で mindmap-verify を立てる）"; fi
+  local pid; pid="$(port_pid)"
+  if [ -n "$pid" ]; then
+    local cwd; cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+    case "$cwd" in "$WORK"*|"/private$WORK"*) ok "ポート $PORT は検証用のフォルダから立てたプロセス（pid $pid、$WORK）";; *) ng "ポート $PORT のプロセスは検証用ではない（場所: ${cwd:-不明}）。動かさないこと";; esac
+    # cf dev のデータは、立てたフォルダの .wrangler/state に入る。検証用のフォルダから立てていれば、ふだんのデータには書かない
+    if ls "$STATE"/v3/do/mindmap-MindmapStore/*.sqlite >/dev/null 2>&1; then ok "マップのデータは使い捨ての置き場にある: $STATE"; else ng "使い捨ての置き場にマップのデータが無い: $STATE"; fi
+  fi
+  if answering; then
+    local me; me="$(curl -fsS -m 3 "$URL/api/auth/me")"
+    if echo "$me" | grep -q '"accountId":"local"'; then ok "認証なしの手元モード（領域 local）"; else ng "手元モードではない: $me"; fi
+    local outline; outline="$(curl -sS -m 3 "$URL/api/outline")"
+    if echo "$outline" | grep -q '"error":"not found"'; then ng "サーバーが古い: /api/outline が無い"; else ok "サーバーに /api/outline がある"; fi
+  fi
+  if [ -x "$BIN" ]; then ok "CLI: $("$BIN" --version)（$BIN）"; else ng "CLI が無い: verify build を実行する"; fi
+  [ -f "$RUNFILE" ] && ok "証拠の置き場: $REPO/.verify/evidence/$(cat "$RUNFILE")"
+  return $bad
+}
+
+# 記録つきで実行する。CLI は ~/.config/mindmap/env（本番のトークン）を読まないよう、HOME を差し替える
+# 記録用に引数を読める形で引用する（printf %q は日本語を $'\346…' にしてしまう）
+shq() {
+  local safe='^[^][[:space:]'"'"'"$`\\|&;<>(){}*?!#~]+$'
+  local q="'" r="'\\''"
+  if [[ "$1" =~ $safe ]]; then printf '%s' "$1"; else printf "'%s'" "${1//$q/$r}"; fi
+}
+
+cmd_cli() {
+  [ -x "$BIN" ] || die "CLI が無い: verify build を実行する"
+  local ev; ev="$(evidence_dir)"; mkdir -p "$CLI_HOME"
+  local out err code
+  out="$(mktemp)"; err="$(mktemp)"
+  set +e
+  if [ -t 0 ]; then
+    env -u MINDMAP_MAP HOME="$CLI_HOME" MINDMAP_URL="$URL" MINDMAP_TOKEN=verify "$BIN" "$@" >"$out" 2>"$err" </dev/null
+  else
+    env -u MINDMAP_MAP HOME="$CLI_HOME" MINDMAP_URL="$URL" MINDMAP_TOKEN=verify "$BIN" "$@" >"$out" 2>"$err"
+  fi
+  code=$?
+  set -e
+  { printf '$ mindmap'; for a in "$@"; do printf ' %s' "$(shq "$a")"; done; printf '\n'; cat "$out"; [ -s "$err" ] && sed 's/^/[stderr] /' "$err"; echo "[exit $code]"; echo; } >> "$ev/cli.log"
+  cat "$out"; cat "$err" >&2; rm -f "$out" "$err"
+  return $code
+}
+
+cmd_api() {
+  local method="$1" path="$2" body="${3:-}" ev; ev="$(evidence_dir)"
+  local res
+  if [ -n "$body" ]; then
+    res="$(curl -sS -m 10 -X "$method" -H 'Content-Type: application/json' -H "Origin: $URL" -d "$body" "$URL$path")"
+  else
+    res="$(curl -sS -m 10 -X "$method" "$URL$path")"
+  fi
+  { echo "\$ $method $path ${body}"; echo "$res"; echo; } >> "$ev/api.log"
+  echo "$res"
+}
+
+capture() {
+  # chrome --screenshot / --dump-dom は仮想時間で動き、ノードが伸びるアニメーションが途中で止まる。
+  # capture.mjs が DevTools のプロトコルで本当の時間を待ち、全体を表示（#btn-fit）してから撮る
+  [ -x "$CHROME" ] || die "Chrome が無い: CHROME に実行ファイルの場所を入れる"
+  local node; node="$(cd "$REPO" && mise which node)" || die "mise で node が見つかりません"
+  "$node" "$(dirname "${BASH_SOURCE[0]}")/capture.mjs" "$CHROME" "$SCRATCH/chrome-profile" "$URL/" "$1" "$2"
+}
+
+cmd_shot() {
+  local name="${1:?名前が必要です}" ev; ev="$(evidence_dir)"
+  capture "$ev/$name" png
+}
+
+cmd_dom() {
+  local name="${1:?名前が必要です}" ev; ev="$(evidence_dir)"
+  capture "$ev/$name" dom
+}
+
+cmd_cleanup() {
+  if [ -f "$PIDFILE" ]; then
+    local pid; pid="$(cat "$PIDFILE")"
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 20); do [ -z "$(port_pid)" ] && break; sleep 0.5; done
+    rm -f "$PIDFILE"
+    echo "止めた: launch で立てたサーバー（プロセスグループ $pid）"
+  else
+    echo "launch で立てたサーバーは無い（preview_start で立てたものは preview_stop で止める）"
+  fi
+  [ -n "$(port_pid)" ] && echo "注意: ポート $PORT はまだ使われている（pid $(port_pid)）。自分が立てたものか確かめてから止める"
+  local run=""; [ -f "$RUNFILE" ] && run="$(cat "$RUNFILE")"
+  rm -rf "$WORK" "$CLI_HOME" "$SCRATCH/chrome-profile" "$RUNFILE"
+  echo "消した: $STATE ほか使い捨てのデータ"
+  [ -n "$run" ] && echo "証拠は残した: $REPO/.verify/evidence/$run"
+  return 0
+}
+
+sub="${1:-}"; shift || true
+case "$sub" in
+  build) cmd_build ;;
+  serve) cmd_serve ;;
+  launch) cmd_launch ;;
+  doctor) cmd_doctor ;;
+  cli) [ "${1:-}" = "--" ] && shift; cmd_cli "$@" ;;
+  api) cmd_api "$@" ;;
+  shot) cmd_shot "$@" ;;
+  dom) cmd_dom "$@" ;;
+  evidence) evidence_dir ;;
+  cleanup) cmd_cleanup ;;
+  *) sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
