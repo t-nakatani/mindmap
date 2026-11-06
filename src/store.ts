@@ -12,6 +12,8 @@
 // 領域が受けるもの（?space=<領域ID> で領域を選ぶ。省くと自分の領域。閲覧者は GET だけ）:
 // - GET  /api/maps            マップの一覧と、今選んでいる名前
 // - POST /api/maps            新しいマップを作る       {name, title, select?, replace?}
+// - PATCH  /api/maps          マップの名前を変える     {name, newName}
+// - DELETE /api/maps          マップを消す（最後の1つは消せない） {name}
 // - PUT  /api/current         選ぶマップを変える       {name}
 // - GET  /api/map[?name=]     マップの JSON と版番号（name を省くと今選んでいるもの）
 // - PUT  /api/map[?name=]     マップを丸ごと置き換える {baseVersion, map}。版が古ければ 409 と最新を返す
@@ -321,6 +323,32 @@ export class MindmapStore extends DurableObject<Env> {
       const version = this.write(name, map, prev?.version ?? 0);
       if (body.select) this.setCurrent(name);
       return json(200, { ok: true, name, version, root: map.nodes[0], current: this.current() });
+    }
+    if (p === '/api/maps' && method === 'PATCH') {
+      const name = cleanName(body.name), newName = cleanName(body.newName);
+      if (!this.row(name)) throw new HttpError(404, `マップ「${name}」がありません`);
+      if (name === newName) return json(200, { ok: true, name, current: this.current() });
+      if (this.row(newName)) throw new HttpError(409, `マップ「${newName}」はもうあります。別の名前にしてください`);
+      const wasCurrent = this.current() === name;
+      this.sql.exec('UPDATE maps SET name = ? WHERE name = ?', newName, name);
+      if (wasCurrent) this.setMeta('current', newName);
+      // 開いている画面は、名前だけを付け替えて開いたままにする
+      this.broadcast({ type: 'renamed', from: name, to: newName });
+      this.broadcastMaps();
+      return json(200, { ok: true, name: newName, current: this.current() });
+    }
+    if (p === '/api/maps' && method === 'DELETE') {
+      const name = cleanName(body.name);
+      if (!this.row(name)) throw new HttpError(404, `マップ「${name}」がありません`);
+      if (this.list().length <= 1) throw new HttpError(400, '最後のマップは消せません');
+      const wasCurrent = this.current() === name;
+      this.sql.exec('DELETE FROM maps WHERE name = ?', name);
+      // 選んでいたマップを消したら、一覧の先頭（map があればそれ）を選び直す
+      const cur = this.current();
+      this.broadcast({ type: 'deleted', name, current: cur });
+      if (wasCurrent && cur) this.broadcast({ type: 'current', name: cur });
+      this.broadcastMaps();
+      return json(200, { ok: true, name, current: cur });
     }
     if (p === '/api/current' && method === 'PUT') {
       return json(200, { ok: true, name: this.setCurrent(body.name) });
