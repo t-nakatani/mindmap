@@ -30,6 +30,7 @@ export default defineConfig({
 			ASSETS: bindings.assets(),
 			// Google ログインと CLI のトークン（src/auth.ts）。値は Worker の secret にある。手元では .dev.vars に書く。
 			// OWNER_EMAIL は API_TOKEN が動く人で、領域を分ける前のマップの移し先。
+			// ALLOWED_EMAILS はログインを絞らない。OWNER_EMAIL が空で、ここにアドレスが1つだけのときの持ち主の控え。
 			GOOGLE_CLIENT_ID: bindings.secret(),
 			GOOGLE_CLIENT_SECRET: bindings.secret(),
 			ALLOWED_EMAILS: bindings.secret(),

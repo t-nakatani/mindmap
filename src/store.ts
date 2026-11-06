@@ -27,7 +27,7 @@ import type { MindMap } from '../lib/map.ts';
 import { applyOp, OPS, urlsToTitle } from '../lib/ops.ts';
 import { unfurl, privateHost } from './unfurl.ts';
 import type { LinkMeta } from './unfurl.ts';
-import { Auth, allowedEmails, ownerEmail, sameOrigin } from './auth.ts';
+import { Auth, ownerEmail, sameOrigin } from './auth.ts';
 import { Directory, LOCAL_SPACE, cleanEmail } from './directory.ts';
 import type { Role, SpaceInfo } from './directory.ts';
 import type { OpArgs } from '../lib/ops.ts';
@@ -140,7 +140,6 @@ export class MindmapStore extends DurableObject<Env> {
       try { email = cleanEmail(body.email); } catch (e) { throw new HttpError(400, (e as Error).message); }
       if (request.method === 'POST') {
         if (email === who.email) throw new HttpError(400, '自分には共有できません');
-        if (!allowedEmails(this.env).has(email)) throw new HttpError(400, `${email} はログインを許可されていません（ALLOWED_EMAILS に足してください）`);
         this.dir.share(own.spaceId, this.dir.ensureAccountByEmail(email).id);
         return json(200, { ok: true, space: own.spaceId, shares: this.dir.shares(own.spaceId) });
       }

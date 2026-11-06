@@ -1,8 +1,8 @@
-// ログイン。Knowledge Box と同じ形で、ブラウザは Google の OpenID Connect（PKCE・state・nonce）でログインし、
-// 署名を確かめた ID トークンのメールアドレスが ALLOWED_EMAILS にあればセッションを作る。セッションは Google の sub に
-// 結び付けたアカウント（src/directory.ts）を指す。cookie は乱数で、Durable Object の SQLite にはそのハッシュだけを置く。
-// CLI とエージェントは Authorization: Bearer に API_TOKEN（Worker の secret）を付け、OWNER_EMAIL の人として動く。
-// 手元（localhost）では、GOOGLE_CLIENT_ID が無ければ認証なしで通す。
+// ログイン。ブラウザは Google の OpenID Connect（PKCE・state・nonce）でログインし、
+// 署名を確かめた ID トークンの確認済みメールアドレスなら、誰でもセッションを作る。初めてのログインでアカウントができる。
+// セッションは Google の sub に結び付けたアカウント（src/directory.ts）を指す。cookie は乱数で、Durable Object の
+// SQLite にはそのハッシュだけを置く。CLI とエージェントは Authorization: Bearer に API_TOKEN（Worker の secret）を付け、
+// OWNER_EMAIL の人として動く。手元（localhost）では、GOOGLE_CLIENT_ID が無ければ認証なしで通す。
 import type { Directory } from './directory.ts';
 const GOOGLE_AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
@@ -41,10 +41,11 @@ function cookie(request: Request, value: string, maxAge: number): string {
   const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
   return `${SESSION_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`;
 }
+/** `ALLOWED_EMAILS` を小文字の集合にする。ログインの許可には使わず、`ownerEmail` の控えにだけ使う。 */
 export function allowedEmails(env: Env): Set<string> {
   return new Set(clean(env.ALLOWED_EMAILS).split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
 }
-/** API トークンが動く人で、既存マップの移し先。OWNER_EMAIL が無く、許可が1人だけならその人。決まらなければ空。 */
+/** API トークンが動く人で、既存マップの移し先。OWNER_EMAIL が無く、ALLOWED_EMAILS が1人だけならその人。決まらなければ空。 */
 export function ownerEmail(env: Env): string {
   const set = clean(env.OWNER_EMAIL).toLowerCase();
   if (set) return set;
@@ -94,8 +95,8 @@ export class Auth {
     if (!token) return null;
     const row = this.sql.exec<{ account_id: string; email: string | null }>(`SELECT s.account_id, a.email FROM account_sessions s
       JOIN accounts a ON a.id = s.account_id WHERE s.hash = ? AND s.expires_at > ?`, await sha256(token), Date.now()).toArray()[0];
-    // 許可を外したアドレスのセッションは、残っていても通さない
-    return row && row.email && allowedEmails(this.env).has(row.email) ? { accountId: row.account_id, email: row.email, via: 'session' } : null;
+    // アドレスを別の Google アカウントに付け替えられた人は email が空になるので、そのセッションは通さない
+    return row?.email ? { accountId: row.account_id, email: row.email, via: 'session' } : null;
   }
 
   /** /api/auth/ の下を受ける。該当しなければ null。 */
@@ -178,10 +179,6 @@ export class Auth {
       identity = await verifyGoogleIdToken(idToken, clean(this.env.GOOGLE_CLIENT_ID), saved.nonce);
     } catch {
       return back('google_identity_invalid');
-    }
-    if (!allowedEmails(this.env).has(identity.email)) {
-      console.log(`ログインを断った: ${identity.email} は ALLOWED_EMAILS にない`);
-      return back('not_allowed');
     }
     const account = this.dir.login(identity.sub, identity.email);
 
