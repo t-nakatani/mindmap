@@ -99,6 +99,9 @@
   .node.drop-target .body { stroke: var(--color-border-accent) !important; stroke-width: 2.5; stroke-dasharray: 6 4; }
   .node.dragging { opacity: .4; }
   #insert-line { stroke: var(--color-border-accent); stroke-width: 4; stroke-linecap: round; display: none; }
+  /* ⇧ ドラッグの範囲選択の枠 */
+  #marquee { fill: var(--color-bg-accent-subtle); stroke: var(--color-border-accent); stroke-width: 1; vector-effect: non-scaling-stroke; display: none; pointer-events: none; }
+  #canvas.selecting { cursor: crosshair; }
   .node text { fill: var(--color-text-primary); font-size: 15px; pointer-events: none; user-select: none; font-family: var(--font-sans); }
   .node.root text { font-size: 18px; font-weight: 600; }
   .node.editing .label, .node.editing .link-title { visibility: hidden; }
@@ -127,7 +130,7 @@
   .board-handle { fill: var(--color-bg-node); stroke: var(--color-border-accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
   .board-handle[data-corner="nw"], .board-handle[data-corner="se"] { cursor: nwse-resize; }
   .board-handle[data-corner="ne"], .board-handle[data-corner="sw"] { cursor: nesw-resize; }
-  .board:not(.selected) .board-handle, body.readonly .board-handle { display: none; }
+  .board:not(.selected) .board-handle, .board.multi .board-handle, body.readonly .board-handle { display: none; }
   body.readonly .board-title { cursor: default; }
   #board-editor { position: absolute; left: 0; top: 0; display: none; height: 24px; box-sizing: border-box; padding: 0 8px;
     border-radius: var(--radius-sm); border: 1px solid var(--color-border-accent); background: var(--color-bg-node); color: var(--color-text-primary); outline: none;
@@ -281,6 +284,7 @@
     <g id="links"></g>
     <g id="nodes"></g>
     <line id="insert-line"></line>
+    <rect id="marquee"></rect>
   </g>
 </svg>
 <div id="editor" contenteditable="true" spellcheck="false"></div>
@@ -390,7 +394,7 @@
       <dt><kbd>Enter</kbd></dt><dd>兄弟ノードを追加（中心では子）</dd>
       <dt><kbd>文字キー</kbd></dt><dd>選択中のノードを書き換え</dd>
       <dt><kbd>Space</kbd></dt><dd>文字を編集</dd>
-      <dt><kbd>Delete</kbd></dt><dd>ノードを子孫ごと削除（ボードはボードだけ）</dd>
+      <dt><kbd>Delete</kbd></dt><dd>ノードを子孫ごと削除（ボードはボードだけ）。範囲選択したものはまとめて削除</dd>
       <dt><kbd>⌘K</kbd></dt><dd>選択中のノードにリンクを付ける・直す</dd>
       <dt><kbd>⌘Enter</kbd></dt><dd>リンクを開く（ノードの ↗ でも）</dd>
       <dt><kbd>⌘V</kbd></dt><dd>URL を貼ると、選択中の下にリンクのノードを足す</dd>
@@ -407,7 +411,8 @@
     <dl class="keys">
       <dt><kbd>ダブルクリック</kbd></dt><dd>ノード：文字を編集　背景：新しい中心ノード</dd>
       <dt><kbd>ドラッグ</kbd></dt><dd>並べ替え・中心の左右へ移動・別のノードに重ねて付け替え</dd>
-      <dt><kbd>⇧ ドラッグ</kbd></dt><dd>中心ノードを別のマップの枝にする</dd>
+      <dt><kbd>⇧ ドラッグ</kbd></dt><dd>背景：範囲を選択　中心ノード：別のマップの枝にする</dd>
+      <dt><kbd>範囲選択</kbd></dt><dd>選んだノードかボードの名前をドラッグでまとめて移動、Delete でまとめて削除、⌘C・⌘X で写す</dd>
       <dt><kbd>ボード</kbd></dt><dd>名前をドラッグで中のマップごと移動、角で大きさを変える、名前をダブルクリックで改名</dd>
       <dt><kbd>スクロール</kbd></dt><dd>画面を移動（⌘ を押しながら・ピンチで拡大縮小）</dd>
     </dl>
@@ -475,6 +480,10 @@
   let boards = [];
   let selectedBoardId = null, editingBoardId = null, boardDrag = null;
   const boardEls = new Map();
+  // ⇧ ドラッグの範囲選択。複数のノードとボードを選ぶ。単独の選択（selectedId・selectedBoardId）とは同時に持たない。
+  const multi = { nodes: new Set(), boards: new Set() };
+  let marquee = null; // ドラッグ中の枠 { x0, y0, x1, y1, startX, startY, moved }
+  const marqueeEl = document.getElementById('marquee');
 
   // ---------- データ ----------
   function makeNode(text, parentId) {
@@ -519,6 +528,8 @@
     for (const n of nodes.values()) { const o = old.get(n.id); if (o) { n.vx = o.vx; n.vy = o.vy; } }
     if (!nodes.has(selectedId)) selectedId = null;
     if (!boards.some(b => b.id === selectedBoardId)) selectedBoardId = null;
+    for (const id of multi.nodes) if (!nodes.has(id)) multi.nodes.delete(id);
+    for (const id of multi.boards) if (!boardById(id)) multi.boards.delete(id);
   }
   // 保存先はサーバーの /api/map?name=<マップ名>。読み込んだときの版番号 version を添えて丸ごと置き換え、
   // 別の場所で先に書かれていたら（409）サーバーの最新を取り込む。届かないときは localStorage だけに残す。
@@ -590,7 +601,7 @@
     clearTimeout(saveTimer); saveTimer = null;
     setMapName(name);
     undoStack = []; redoStack = [];
-    nodes = new Map();
+    nodes = new Map(); clearMulti();
     restore(data); lastSaved = JSON.stringify(serialize()); version = data.version || 0;
     selectedId = roots()[0] ? roots()[0].id : null;
     layout(); syncDom(); fitView();
@@ -811,7 +822,7 @@
 
   function newMap() {
     nodes = new Map(); uid = 1; undoStack = []; redoStack = [];
-    boards = []; selectedBoardId = null;
+    boards = []; selectedBoardId = null; clearMulti();
     const root = makeNode('中心テーマ', null);
     nodes.set(root.id, root);
     selectedId = root.id;
@@ -939,6 +950,58 @@
     commit();
   }
 
+  // ---------- 範囲選択 ----------
+  function clearMulti() { multi.nodes.clear(); multi.boards.clear(); }
+  const hasMulti = () => multi.nodes.size + multi.boards.size > 0;
+  function multiActive() { return !selectedId && !selectedBoardId && hasMulti(); }
+  // 選んだノードのうち、祖先が選ばれていないもの。動かすのと消すのは、これを子孫ごと扱う。上から順に並べる。
+  function multiTops() {
+    const tops = [];
+    for (const id of multi.nodes) {
+      const n = nodes.get(id); if (!n) continue;
+      let p = n.parentId, covered = false;
+      while (p) { if (multi.nodes.has(p)) { covered = true; break; } p = nodes.get(p).parentId; }
+      if (!covered) tops.push(n);
+    }
+    return tops.sort((a, b) => a.cy - b.cy || a.cx - b.cx);
+  }
+  // 枠に重なる見えているノードと、枠にすっぽり入るボードを選ぶ。1つだけならふつうの選択にする。
+  function selectInRect(x1, y1, x2, y2) {
+    const ns = [...nodes.values()].filter(n => !n.hidden
+      && n.cx + n.w / 2 >= x1 && n.cx - n.w / 2 <= x2 && n.cy + n.h / 2 >= y1 && n.cy - n.h / 2 <= y2).map(n => n.id);
+    const bs = boards.filter(b => b.x >= x1 && b.y >= y1 && b.x + b.w <= x2 && b.y + b.h <= y2).map(b => b.id);
+    selectedId = null; selectedBoardId = null; clearMulti();
+    if (ns.length + bs.length === 1) { if (ns.length) selectedId = ns[0]; else selectedBoardId = bs[0]; return; }
+    for (const id of ns) multi.nodes.add(id);
+    for (const id of bs) multi.boards.add(id);
+  }
+  // 範囲選択したものをまとめて消す。ノードは子孫ごと、中心ノードはマップごと（最後の1つは残す）、ボードはボードだけ。
+  function deleteMulti(withBoards = true) {
+    if (readOnly || !multiActive()) return;
+    const tops = multiTops();
+    pushUndo();
+    for (const n of tops.filter(n => !isRoot(n))) {
+      const p = nodes.get(n.parentId);
+      p.children.splice(p.children.indexOf(n.id), 1);
+      for (const sid of subtreeIds(n)) nodes.delete(sid);
+    }
+    for (const r of tops.filter(isRoot)) if (roots().length > 1) for (const sid of subtreeIds(r)) nodes.delete(sid);
+    if (withBoards) boards = boards.filter(b => !multi.boards.has(b.id));
+    clearMulti();
+    commit();
+  }
+  // 複数の枝を、並びを保ったまま同じ場所へ移す。2つめからは前に移したものの後ろに入れる。
+  function moveMany(ids, drop) {
+    pushUndo();
+    const before = undoStack[undoStack.length - 1];
+    let d = drop;
+    for (const id of ids) {
+      moveTo(id, d, false);
+      d = { parentId: drop.parentId, side: drop.side, beforeId: null, afterId: id };
+    }
+    if (JSON.stringify(serialize()) === before) undoStack.pop();
+  }
+
   function toggleCollapse(id) {
     const n = nodes.get(id);
     if (!n || isRoot(n) || !n.children.length) return;
@@ -988,7 +1051,15 @@
     return trees;
   }
   // 選択中のノードを写す。切り取りなら消す（最後の中心ノードと、閲覧のみの領域では消さずに写すだけ）。写した文字を返す。
+  // 範囲選択のときは、選んだ枝とマップを上から順に写す（ボードは写さず、切り取りでも残す）。
   function copySelected(cut) {
+    if (multiActive()) {
+      const tops = multiTops(); if (!tops.length) return null;
+      const trees = tops.map(snapshot);
+      clip = { text: toOutline(trees), trees };
+      if (cut && !readOnly) deleteMulti(false);
+      return clip.text;
+    }
     const n = nodes.get(selectedId); if (!n) return null;
     const trees = [snapshot(n)];
     clip = { text: toOutline(trees), trees };
@@ -1273,19 +1344,29 @@
   function boardContains(b, x, y) { return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h; }
   function boardInside(outer, b) { return b !== outer && b.x >= outer.x && b.y >= outer.y && b.x + b.w <= outer.x + outer.w && b.y + b.h <= outer.y + outer.h; }
   function selectBoard(id) { selectedBoardId = id; if (id) selectedId = null; }
-  // 選択中のノードのマップを囲む。選択がなければ画面の真ん中に置く。
+  // 選択中のノードのマップを囲む。範囲選択なら、選んだノードのマップとボードをまとめて囲む。選択がなければ画面の真ん中に置く。
   function addBoard() {
     if (readOnly) return;
     finishEdit();
     pushUndo();
     const sel = nodes.get(selectedId);
+    const maps = new Set(), around = [];
+    if (multiActive()) {
+      for (const n of multiTops()) maps.add(rootOf(n));
+      around.push(...boards.filter(b => multi.boards.has(b.id)));
+    } else if (sel) maps.add(rootOf(sel));
     let x, y, w, h;
-    if (sel) {
+    if (maps.size || around.length) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const id of subtreeIds(rootOf(sel))) {
+      for (const r of maps) for (const id of subtreeIds(r)) {
         const n = nodes.get(id); if (n.hidden) continue;
         minX = Math.min(minX, n.cx - n.w / 2); maxX = Math.max(maxX, n.cx + n.w / 2);
         minY = Math.min(minY, n.cy - n.h / 2); maxY = Math.max(maxY, n.cy + n.h / 2);
+      }
+      // 中のボードの上端は名前を含むので、名前の分の余白を二重に取らない
+      for (const b of around) {
+        minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x + b.w);
+        minY = Math.min(minY, b.y + BOARD_TITLE); maxY = Math.max(maxY, b.y + b.h);
       }
       x = minX - BOARD_PAD; y = minY - BOARD_PAD - BOARD_TITLE;
       w = maxX - minX + BOARD_PAD * 2; h = maxY - minY + BOARD_PAD * 2 + BOARD_TITLE;
@@ -1354,7 +1435,8 @@
     meas.font = BOARD_LABEL_FONT;
     for (const b of boards) {
       const e = boardEls.get(b.id);
-      e.g.setAttribute('class', 'board' + (b.id === selectedBoardId ? ' selected' : '') + (b.id === editingBoardId ? ' editing' : ''));
+      e.g.setAttribute('class', 'board' + (b.id === selectedBoardId ? ' selected' : '') + (multi.boards.has(b.id) ? ' selected multi' : '')
+        + (b.id === editingBoardId ? ' editing' : ''));
       e.rect.setAttribute('x', b.x); e.rect.setAttribute('y', b.y);
       e.rect.setAttribute('width', b.w); e.rect.setAttribute('height', b.h);
       if (e.tText.textContent !== b.name) e.tText.textContent = b.name;
@@ -1495,6 +1577,8 @@
   }
   function draw() {
     initVisuals();
+    // 単独の選択ができたら、範囲の選択は外す（ノードの追加や貼り付けで選択が移ったときも）
+    if ((selectedId || selectedBoardId) && hasMulti()) clearMulti();
     world.setAttribute('transform', `translate(${view.tx},${view.ty}) scale(${view.s})`);
     zoomLabel.textContent = Math.round(view.s * 100) + '%';
     drawBoards();
@@ -1507,7 +1591,7 @@
       const e = nodeEls.get(n.id);
       const color = colorOf(n);
       e.g.setAttribute('transform', `translate(${n.vx - n.w / 2},${n.vy - n.h / 2})`);
-      e.g.setAttribute('class', 'node' + (isRoot(n) ? ' root' : '') + (n.id === selectedId ? ' selected' : '')
+      e.g.setAttribute('class', 'node' + (isRoot(n) ? ' root' : '') + (n.id === selectedId || multi.nodes.has(n.id) ? ' selected' : '')
         + (drag && drag.drop && drag.drop.parentId === n.id && !drag.drop.line ? ' drop-target' : '')
         + (n.id === editingId ? ' editing' : '') + (dragOffset(n).x || dragOffset(n).y ? ' dragging' : '')
         + (n.hidden ? ' hidden' : '') + (n.collapsed ? ' collapsed' : '') + (n.url ? ' is-link' : ''));
@@ -1552,6 +1636,11 @@
     const line = drag && drag.drop && drag.drop.line;
     insertLine.style.display = line ? 'block' : 'none';
     if (line) for (const k of ['x1', 'x2', 'y1', 'y2']) insertLine.setAttribute(k, line[k]);
+    marqueeEl.style.display = marquee && marquee.moved ? 'block' : 'none';
+    if (marquee) {
+      marqueeEl.setAttribute('x', Math.min(marquee.x0, marquee.x1)); marqueeEl.setAttribute('y', Math.min(marquee.y0, marquee.y1));
+      marqueeEl.setAttribute('width', Math.abs(marquee.x1 - marquee.x0)); marqueeEl.setAttribute('height', Math.abs(marquee.y1 - marquee.y0));
+    }
     if (editingId) {
       const n = nodes.get(editingId);
       const root = isRoot(n), fs = root ? 18 : 15, b = linkBox(n);
@@ -1706,6 +1795,8 @@
     if (bt) {
       finishEdit(); finishBoardEdit();
       const b = boardById(bt.closest('.board').dataset.id);
+      // 範囲選択に入っているボードの名前をつかむと、選んだものをまとめて動かす
+      if (multiActive() && multi.boards.has(b.id)) { startGroupDrag(e, w, { boardId: b.id }); return; }
       selectBoard(b.id);
       boardDrag = { b, corner: bt.dataset.corner || null, startX: e.clientX, startY: e.clientY, start: w,
         orig: { x: b.x, y: b.y, w: b.w, h: b.h }, moved: false, roots: [], inner: [] };
@@ -1722,24 +1813,57 @@
       const n = nodes.get(g.dataset.id);
       if (editingId && editingId !== n.id) finishEdit();
       if (editingId === n.id) return;
+      // 範囲選択に入っているノードをつかむと、選んだものをまとめて動かす。
+      // そのノードのマップの中心ノードも選んでいればマップごと、そうでなければ選んだ枝をまとめて付け替える
+      const group = multiActive() && multi.nodes.has(n.id);
+      if (group && multi.nodes.has(rootOf(n).id)) { startGroupDrag(e, w, { nodeId: n.id }); return; }
       drag = { id: n.id, startX: e.clientX, startY: e.clientY, grabDX: n.cx - w.x, grabDY: n.cy - w.y, moved: false,
-        sub: null, off: NO_OFFSET, drop: null };
-      selectedId = n.id; selectedBoardId = null; requestDraw();
+        sub: null, off: NO_OFFSET, drop: null, group: group ? multiTops().filter(t => !isRoot(t)).map(t => t.id) : null };
+      if (!group) { selectedId = n.id; selectedBoardId = null; }
+      requestDraw();
     } else {
       finishEdit(); finishBoardEdit();
-      pan = { startX: e.clientX, startY: e.clientY, tx: view.tx, ty: view.ty, moved: false };
-      svg.classList.add('panning');
+      if (e.shiftKey) {
+        // ⇧ を押しながら背景をドラッグすると、範囲を選ぶ
+        marquee = { x0: w.x, y0: w.y, x1: w.x, y1: w.y, startX: e.clientX, startY: e.clientY, moved: false };
+        svg.classList.add('selecting');
+      } else {
+        pan = { startX: e.clientX, startY: e.clientY, tx: view.tx, ty: view.ty, moved: false };
+        svg.classList.add('panning');
+      }
     }
     svg.setPointerCapture(e.pointerId);
   });
+  // 範囲選択したマップ（中心ノード）とボードを、まとめて動かし始める。ボードの中にあるマップとボードもついてくる。
+  // 動かさずに離したら、つかんだものだけを選ぶ（click）。
+  function startGroupDrag(e, w, click) {
+    boardDrag = { b: null, group: true, click, corner: null, startX: e.clientX, startY: e.clientY, start: w,
+      orig: null, moved: false, roots: [], inner: [] };
+    svg.setPointerCapture(e.pointerId);
+    requestDraw();
+  }
   svg.addEventListener('pointermove', e => {
-    if (boardDrag) {
+    if (marquee) {
+      const m = marquee;
+      if (!m.moved && Math.hypot(e.clientX - m.startX, e.clientY - m.startY) < 3) return;
+      m.moved = true;
+      const w = toWorld(e.clientX, e.clientY);
+      m.x1 = w.x; m.y1 = w.y;
+      requestDraw();
+    } else if (boardDrag) {
       const d = boardDrag, b = d.b, o = d.orig;
       if (!d.moved) {
         if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 4) return;
         d.moved = true;
         pushUndo();
-        if (!d.corner) {
+        if (d.group) {
+          const sel = boards.filter(q => multi.boards.has(q.id));
+          const bs = new Set(sel), rs = new Set(multiTops().filter(isRoot));
+          for (const q of sel) for (const r of boards) if (boardInside(q, r)) bs.add(r);
+          for (const r of roots()) if (sel.some(q => boardContains(q, r.dx, r.dy))) rs.add(r);
+          d.inner = [...bs].map(q => ({ q, x: q.x, y: q.y }));
+          d.roots = [...rs].map(r => ({ r, x: r.dx, y: r.dy }));
+        } else if (!d.corner) {
           d.roots = roots().filter(r => boardContains(o, r.dx, r.dy)).map(r => ({ r, x: r.dx, y: r.dy }));
           d.inner = boards.filter(q => boardInside(b, q)).map(q => ({ q, x: q.x, y: q.y }));
         }
@@ -1753,7 +1877,7 @@
         if (d.corner.includes('n')) y1 = Math.min(y1 + my, y2 - BOARD_MIN_H); else y2 = Math.max(y2 + my, y1 + BOARD_MIN_H);
         Object.assign(b, { x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
       } else {
-        b.x = o.x + mx; b.y = o.y + my;
+        if (b) { b.x = o.x + mx; b.y = o.y + my; }
         for (const it of d.inner) { it.q.x = it.x + mx; it.q.y = it.y + my; }
         for (const it of d.roots) { it.r.dx = it.x + mx; it.r.dy = it.y + my; }
         layout();
@@ -1766,11 +1890,13 @@
       if (!drag.moved) {
         if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 4) return;
         drag.moved = true;
-        if (isRoot(n)) pushUndo(); else drag.sub = subtreeIds(n);
+        if (isRoot(n)) pushUndo();
+        else if (drag.group) { drag.sub = new Set(); for (const id of drag.group) subtreeIds(nodes.get(id), drag.sub); }
+        else drag.sub = subtreeIds(n);
       }
       const w = toWorld(e.clientX, e.clientY);
       const tx = w.x + drag.grabDX, ty = w.y + drag.grabDY;
-      const exclude = subtreeIds(n);
+      const exclude = drag.sub || subtreeIds(n);
       if (isRoot(n)) {
         n.dx = tx; n.dy = ty;
         layout(); n.vx = n.cx; n.vy = n.cy;
@@ -1791,10 +1917,19 @@
     }
   });
   function endPointer(e, cancelled = false) {
+    if (marquee) {
+      const m = marquee;
+      marquee = null;
+      svg.classList.remove('selecting');
+      if (!m.moved) { selectedId = null; selectedBoardId = null; clearMulti(); }
+      else if (!cancelled) selectInRect(Math.min(m.x0, m.x1), Math.min(m.y0, m.y1), Math.max(m.x0, m.x1), Math.max(m.y0, m.y1));
+      requestDraw();
+    }
     if (boardDrag) {
       const d = boardDrag;
       boardDrag = null;
       if (d.moved) commit();
+      else if (d.group && !cancelled) { if (d.click.nodeId) selectedId = d.click.nodeId; else selectBoard(d.click.boardId); }
       requestDraw();
     }
     if (drag) {
@@ -1802,13 +1937,13 @@
       const d = drag;
       drag = null;
       if (d.moved && n) {
-        if (d.drop && !cancelled) moveTo(n.id, d.drop, !isRoot(n));
+        if (d.drop && !cancelled) { if (d.group) moveMany(d.group, d.drop); else moveTo(n.id, d.drop, !isRoot(n)); }
         else if (isRoot(n)) commit();
-      }
+      } else if (d.group && n && !cancelled) selectedId = n.id;
       requestDraw();
     }
     if (pan) {
-      if (!pan.moved) { selectedId = null; selectedBoardId = null; requestDraw(); }
+      if (!pan.moved) { selectedId = null; selectedBoardId = null; clearMulti(); requestDraw(); }
       pan = null; svg.classList.remove('panning');
     }
   }
@@ -1870,7 +2005,7 @@
     if (readOnly) {
       if (e.key.startsWith('Arrow') && !meta && selectedId) { e.preventDefault(); navigate(e.key); }
       else if (meta && !e.altKey && ['c', 'x'].includes(e.key.toLowerCase())) onClipKey(e.key.toLowerCase());
-      else if (e.key === 'Escape') { selectedId = null; requestDraw(); }
+      else if (e.key === 'Escape') { selectedId = null; clearMulti(); requestDraw(); }
       else if (e.key === 'Tab' && !selectedId) { e.preventDefault(); selectedId = roots()[0].id; requestDraw(); }
       return;
     }
@@ -1881,6 +2016,11 @@
     }
     if (meta && !e.altKey && ['c', 'x', 'v'].includes(e.key.toLowerCase())) { onClipKey(e.key.toLowerCase()); return; }
     if (meta) return;
+    if (multiActive()) {
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteMulti(); }
+      else if (e.key === 'Escape') { clearMulti(); requestDraw(); }
+      return;
+    }
     if (selectedBoardId) {
       if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); removeBoard(selectedBoardId); }
       else if (e.key === 'Enter') { e.preventDefault(); startBoardEdit(selectedBoardId); }
