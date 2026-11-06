@@ -9,8 +9,8 @@
     "build": "mise exec -- cf build",
     "deploy": "mise exec -- cf deploy",
     "types": "mise exec -- cf workers types",
-    "typecheck": "npm run types && tsc -p tsconfig.json && tsc -p tsconfig.cli.json",
-    "cli": "node cli.ts"
+    "typecheck": "npm run types && tsc -p tsconfig.json",
+    "cli": "cargo run --release --quiet --manifest-path cli/Cargo.toml --"
   },
   "engines": {
     "node": ">=23.6"

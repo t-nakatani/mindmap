@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "mindmap", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 4381 },
+    { "name": "mindmap-verify", "runtimeExecutable": ".cursor/skills/verify-mindmap/scripts/verify", "runtimeArgs": ["serve"], "port": 4388 }
+  ]
+}

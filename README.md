@@ -5,7 +5,7 @@ MindNode の「ノードの生え方」を Web で再現したマインドマッ
 
 ## 動かし方（手元）
 
-CLI は Node 23.6 以上（TypeScript をそのまま動かすため）。開発サーバーとデプロイは Cloudflare の CLI `cf` を使い、`cf` は Node 26.12 以上が要る。
+CLI は Rust の1ファイルの実行ファイル `mindmap`（`cli/`）。入れ方は [AGENTS.md](AGENTS.md) にある。手元でビルドするときは `cargo install --path cli`。開発サーバーとデプロイは Cloudflare の CLI `cf` を使い、`cf` は Node 26.12 以上が要る。
 このプロジェクトは `mise.toml` で Node 26.12.1 に固めてあり、`npm run dev` などの scripts は `mise exec` 経由で `cf` を呼ぶ。
 
 ```sh
@@ -18,9 +18,9 @@ npm run dev
 エージェントや端末からは CLI で操作する。使い方は [AGENTS.md](AGENTS.md) に書いた。
 
 ```sh
-node cli.ts show
-node cli.ts add "予算" --under 中心テーマ
-node cli.ts import outline.md --replace
+mindmap show
+mindmap add "予算" --under 中心テーマ
+mindmap import outline.md --replace
 ```
 
 ## ファイル時代のマップを移す
@@ -29,8 +29,8 @@ node cli.ts import outline.md --replace
 `data/` はリポジトリの中にあり、git の対象外。2026-10-25 にデプロイ先へ移し終え、今は控えとして残している。
 
 ```sh
-node cli.ts migrate              # data/ を移す。同じ名前のマップがあれば飛ばす
-node cli.ts migrate --replace    # 同じ名前のマップを上書きする
+mindmap migrate              # data/ を移す。同じ名前のマップがあれば飛ばす
+mindmap migrate --replace    # 同じ名前のマップを上書きする
 ```
 
 画面を先に開くと、空のサーバーに `map` が自動で作られ、移すときに飛ばされる。その場合は `--replace` を付ける。
@@ -68,7 +68,7 @@ npm run deploy                         # https://mindmap.tomoya-12.workers.dev
 `a_…` の ID で、領域は `s_…` の ID で区別する。メールアドレスは表示と共有の指定にだけ使うので、Google 側でアドレスを変えても領域はそのまま残る。
 
 - 名簿は Durable Object `main` にある（アカウント・領域・共有・セッション）。領域のマップは Durable Object `space:<領域ID>` に入る。
-- 自分の領域は、画面の「共有」か `node cli.ts share add <メール>` で、ほかのアカウントに読み取り専用で見せられる。相手のメールアドレスに制限はない。まだ一度もログインしていない人にも共有でき、その人が初めてログインしたときに結び付く。
+- 自分の領域は、画面の「共有」か `mindmap share add <メール>` で、ほかのアカウントに読み取り専用で見せられる。相手のメールアドレスに制限はない。まだ一度もログインしていない人にも共有でき、その人が初めてログインしたときに結び付く。
 - 共有された人は、画面の左上の、マップ名の左に出る領域のセレクトで切り替えて閲覧する。書き込みはサーバーが断る。共有を外すと、開いている画面は自分の領域に戻る。
 - 領域を分ける前に `main` に入っていたマップは、`OWNER_EMAIL` の人が初めて開いたとき（ログインか API トークン）に、その人の領域へ一度だけ写る。`main` の元の行は控えとして残る。
 - 領域を分けたときにセッションの形が変わったので、デプロイ後は一度ログインし直す。
@@ -126,10 +126,10 @@ CLI は `~/.config/mindmap/env` に `MINDMAP_URL` と `MINDMAP_TOKEN`（`API_TOK
 - `src/worker.ts`: 入口。`/api/` を、名簿 `main` で権限を確かめてから領域の Durable Object へ渡す。
 - `src/auth.ts`: Google ログインとセッション、API トークンの確認。名簿 `main` の中で動く。
 - `src/directory.ts`: 名簿の表。アカウント・領域・共有と、領域を分ける前のマップの移し替えに使う行。
-- `src/store.ts`: Durable Object。名簿 `main`（`GET /api/spaces`、`GET/POST/DELETE /api/shares`）と、領域 `space:<領域ID>` の2つの役で使う。領域は全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）、`GET /api/unfurl?url=`（リンクの題名など。領域ごとに1週間覚えておく）。書き込みは同期の SQL だけで行うので、順に処理される。リンクの題名を読み込む操作は、マップを読む前にページを取りに行く。
+- `src/store.ts`: Durable Object。名簿 `main`（`GET /api/spaces`、`GET/POST/DELETE /api/shares`）と、領域 `space:<領域ID>` の2つの役で使う。領域は全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`GET /api/outline`（CLI の show・export の文字）、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）、`GET /api/unfurl?url=`（リンクの題名など。領域ごとに1週間覚えておく）。書き込みは同期の SQL だけで行うので、順に処理される。リンクの題名を読み込む操作は、マップを読む前にページを取りに行く。
 - `src/unfurl.ts`: リンクの展開。ページの `<head>` だけを読み（5 秒・512KB まで）、og:title・`<title>`・og:site_name・説明・og:image・アイコンを返す。
-- `lib/map.ts` と `lib/ops.ts`: 名前・ID・経路でノードを指して追加・改名・移動・削除・折りたたみ・リンク、Markdown の箇条書きの取り込みと書き出し（リンクは `[文字](URL)`）。Durable Object と CLI が共有する。
-- `cli.ts`: API を呼ぶ CLI。
+- `lib/map.ts` と `lib/ops.ts`: 名前・ID・経路でノードを指して追加・改名・移動・削除・折りたたみ・リンク、Markdown の箇条書きの取り込みと書き出し（リンクは `[文字](URL)`）。Durable Object が使う。
+- `cli/`: API を呼ぶ Rust の CLI。ノードの解決や箇条書きの書き出し（`GET /api/outline`）はサーバーに任せる。cargo-dist で GitHub Releases に配る（タグ `v*` の push）。
 
 ## まだないもの
 

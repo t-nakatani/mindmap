@@ -1,0 +1,21 @@
+[package]
+name = "mindmap"
+version = "0.1.0"
+edition = "2021"
+description = "マインドマップ（https://mindmap.tomoya-12.workers.dev）を読み書きする CLI"
+repository = "https://github.com/t-nakatani/mindmap"
+homepage = "https://mindmap.tomoya-12.workers.dev"
+publish = false
+
+# crates.io には出さないが、GitHub Releases にはバイナリを出す（dist-workspace.toml）
+[package.metadata.dist]
+dist = true
+
+[[bin]]
+name = "mindmap"
+path = "src/main.rs"
+
+[dependencies]
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

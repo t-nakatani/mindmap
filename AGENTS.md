@@ -4,6 +4,17 @@
 エージェントは **CLI だけ** でマップを読み書きします。CLI は API を呼び、書き込みはサーバー側で順に行われます。
 CLI の変更はブラウザに即時に（WebSocket で）反映されます。人がブラウザで動かした内容も同じところに入ります。
 
+## CLI を入れる
+
+CLI は `mindmap` という1つの実行ファイルです（Rust、`cli/`）。GitHub Releases から入れます。
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/t-nakatani/mindmap/releases/latest/download/mindmap-installer.sh | sh
+```
+
+Windows は `powershell -ExecutionPolicy Bypass -c "irm https://github.com/t-nakatani/mindmap/releases/latest/download/mindmap-installer.ps1 | iex"`。
+このリポジトリからビルドするときは `cargo install --path cli`（`npm run cli -- show` でも動く）。
+
 ## つなぎ先
 
 ```sh
@@ -25,11 +36,11 @@ MINDMAP_TOKEN=<API トークン>
 API トークンは `OWNER_EMAIL` の人として動き、その人の領域を読み書きします。手元で認証なしのときは、領域は `local` の1つだけです。
 
 ```sh
-node cli.ts spaces # 開ける領域。* が自分の領域、ほかは共有されたもの（閲覧のみ）
-node cli.ts show --space s_xxxxxxxxxxxx # 共有された領域を読む（maps・show・export だけ）
-node cli.ts share # 自分の領域を共有している相手
-node cli.ts share add someone@example.com # 読み取り専用で共有する（メールアドレスなら誰でも。初回ログインで結び付く）
-node cli.ts share remove someone@example.com
+mindmap spaces # 開ける領域。* が自分の領域、ほかは共有されたもの（閲覧のみ）
+mindmap show --space s_xxxxxxxxxxxx # 共有された領域を読む（maps・show・export だけ）
+mindmap share # 自分の領域を共有している相手
+mindmap share add someone@example.com # 読み取り専用で共有する（メールアドレスなら誰でも。初回ログインで結び付く）
+mindmap share remove someone@example.com
 ```
 
 共有された領域には書き込めません。共有の追加と解除は、頼まれたときだけ行ってください。
@@ -40,10 +51,10 @@ node cli.ts share remove someone@example.com
 画面の左上のマップ名（マップの一覧）と CLI の `use` は同じ選択を動かすので、人が画面で切り替えればエージェントの対象も変わり、逆も同じです。
 
 ```sh
-node cli.ts maps                       # 一覧。* が今選んでいるマップ
-node cli.ts use 採用計画               # 切り替える（画面も切り替わる）
-node cli.ts new "採用計画" --map 採用計画   # 新しいマップを作る。選択は変わらない
-node cli.ts show --map 採用計画        # どのコマンドも --map で対象だけ変えられる
+mindmap maps                       # 一覧。* が今選んでいるマップ
+mindmap use 採用計画               # 切り替える（画面も切り替わる）
+mindmap new "採用計画" --map 採用計画   # 新しいマップを作る。選択は変わらない
+mindmap show --map 採用計画        # どのコマンドも --map で対象だけ変えられる
 ```
 
 人が見ているマップを勝手に切り替えないでください。別のマップを触るときは `use` ではなく `--map` を付けます。
@@ -53,7 +64,7 @@ node cli.ts show --map 採用計画        # どのコマンドも --map で対�
 ## まず現状を見る
 
 ```sh
-node cli.ts show
+mindmap show
 ```
 
 ```
@@ -79,19 +90,19 @@ node cli.ts show
 ## 操作
 
 ```sh
-node cli.ts add "外注費" --under 予算                 # 子を足す
-node cli.ts add "外注費" --under 予算 --after 広告費   # 兄弟の後ろに入れる
-node cli.ts rename 北米 "北米（優先）"
-node cli.ts move 人件費 --under 市場/海外               # 子ごと移す
-node cli.ts remove 広告費                               # 子ごと消す
-node cli.ts layout 新規事業の検討 right                 # マップの配置を右だけにする（both / right / left）
-node cli.ts side 予算 left                              # 枝を中心の左へ出す（片側のマップは両側になる）
-node cli.ts collapse 市場                               # 枝を閉じる
-node cli.ts expand 市場
-node cli.ts export                                      # Markdown で書き出す（ID なし）
-node cli.ts add "採用" --root                           # 新しい中心ノード（独立したマップ）を足す
-node cli.ts move 市場 --root                            # 枝を切り離して独立したマップにする
-node cli.ts move 採用 --under 予算                      # 中心ノードを別のマップの枝にする
+mindmap add "外注費" --under 予算                 # 子を足す
+mindmap add "外注費" --under 予算 --after 広告費   # 兄弟の後ろに入れる
+mindmap rename 北米 "北米（優先）"
+mindmap move 人件費 --under 市場/海外               # 子ごと移す
+mindmap remove 広告費                               # 子ごと消す
+mindmap layout 新規事業の検討 right                 # マップの配置を右だけにする（both / right / left）
+mindmap side 予算 left                              # 枝を中心の左へ出す（片側のマップは両側になる）
+mindmap collapse 市場                               # 枝を閉じる
+mindmap expand 市場
+mindmap export                                      # Markdown で書き出す（ID なし）
+mindmap add "採用" --root                           # 新しい中心ノード（独立したマップ）を足す
+mindmap move 市場 --root                            # 枝を切り離して独立したマップにする
+mindmap move 採用 --under 予算                      # 中心ノードを別のマップの枝にする
 ```
 
 `add` で `--under` を省くと、中心ノードが1つのときはその下に入ります。中心ノードが複数あるときは `--under` か `--root` が必要です。
@@ -101,10 +112,10 @@ node cli.ts move 採用 --under 予算                      # 中心ノードを
 ノードには URL を1つ付けられます。画面では、サイトのアイコン・ページの題名・↗ の1行で表示され、↗ で開けます。
 
 ```sh
-node cli.ts add https://developers.cloudflare.com/durable-objects/ --under 参考資料   # 題名を読み込んで文字にする
-node cli.ts add "設計メモ" --url https://example.com/memo --under 参考資料            # 文字を決めて付ける
-node cli.ts link 予算 https://example.com/budget                                     # 今あるノードに付ける（文字はそのまま）
-node cli.ts unlink 予算
+mindmap add https://developers.cloudflare.com/durable-objects/ --under 参考資料   # 題名を読み込んで文字にする
+mindmap add "設計メモ" --url https://example.com/memo --under 参考資料            # 文字を決めて付ける
+mindmap link 予算 https://example.com/budget                                     # 今あるノードに付ける（文字はそのまま）
+mindmap unlink 予算
 ```
 
 `show` では `(n5 リンク:https://…)` と出ます。`export` と `import` では `- [文字](URL)` と書き、URL だけの行もリンクになります（題名を読み込みます）。
@@ -124,10 +135,10 @@ cat > /tmp/outline.md <<'EOF'
 - 予算
   - 広告費
 EOF
-node cli.ts import /tmp/outline.md --replace      # すべてのマップを作り直す
-node cli.ts import /tmp/outline.md                # 見出しがあれば、新しいマップとして足す
-node cli.ts import /tmp/outline.md --under リスク  # 既存のノードの下に足す
-printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # 標準入力からも読める
+mindmap import /tmp/outline.md --replace      # すべてのマップを作り直す
+mindmap import /tmp/outline.md                # 見出しがあれば、新しいマップとして足す
+mindmap import /tmp/outline.md --under リスク  # 既存のノードの下に足す
+printf -- '- 法務\n- 技術\n' | mindmap import - --under リスク   # 標準入力からも読める
 ```
 
 `--replace` は人が置いた位置や折りたたみも消します。既存のマップに足すときは `--under` を使ってください。
@@ -152,9 +163,11 @@ printf -- '- 法務\n- 技術\n' | node cli.ts import - --under リスク   # �
 - `src/auth.ts`: Google ログイン（ブラウザ）と API トークン（CLI）の確認。セッションはアカウント ID を持つ。名簿 `main` の中で動く。
 - `src/directory.ts`: 名簿。アカウント（Google の sub に結び付けた `a_…`）、領域（`s_…`、今は1人1つ）、共有（領域 → 閲覧者）。
 - `src/store.ts`: Durable Object `MindmapStore`。名簿 `main` と、領域ごとの `space:<領域ID>` の2つの役で使う。領域は全マップと「今選んでいるマップ」を SQLite に持ち、API と WebSocket の配信を受け持つ。手元で認証なしのときは `main` が領域 `local` を兼ねる。
-- `lib/map.ts`: ノードの解決、追加・移動・削除、箇条書きの読み書き。Durable Object と CLI が共有する。
+- `lib/map.ts`: ノードの解決、追加・移動・削除、箇条書きの読み書き。Durable Object が使う。
 - `lib/ops.ts`: CLI の操作（add・move など）を、名前の解決ごとマップに当てる。Durable Object が呼ぶ。
-- `cli.ts`: コマンドの入口。`node cli.ts` でそのまま動く（Node 23.6 以上）。
+- `cli/`: Rust の CLI（`mindmap`）。API を呼ぶだけの薄いクライアントで、マップの形やノードの解決を持たない。`show`・`export` の文字も `GET /api/outline` でサーバーが作る。マップの形や操作を変えるときは、`lib/` と `src/store.ts` を直せば CLI はそのまま使える。新しいコマンドや引数を足すときだけ `cli/src/main.rs` を直す。
+  `cargo build --release` で `target/release/mindmap` ができる。確かめるときは `MINDMAP_URL=http://127.0.0.1:4381` を付け、`~/.config/mindmap/env` のデプロイ先を使わない。
+- 配布は cargo-dist（`dist-workspace.toml`、`.github/workflows/release.yml`）。`cli/Cargo.toml` の `version` を上げてコミットし、`v0.2.0` のようなタグを push すると、macOS・Linux・Windows のバイナリとインストーラーが GitHub Releases に出る。設定を変えたら `dist generate` でワークフローを作り直す。
 - `cloudflare.config.ts`: Worker・binding・Durable Object・secret の宣言と、デプロイ先のアカウント。`wrangler.config.ts`: 静的アセットの置き場と手元の開発サーバーのポート。
 - `src/unfurl.ts`: リンクの展開。ページの `<head>` を読んで、題名・サイト名・説明・画像・アイコンを返す（`GET /api/unfurl?url=`）。手元やネットワーク内のアドレスは、手元の開発（領域 `local`）でだけ読む。
 - 保存の形: マップ1つが `{ uid, nodes: [{ id, text, parentId, children, side, dx, dy, colorIndex, collapsed, url? }], boards: [{ id, name, x, y, w, h }] }`。版番号はマップごとに書き込むたびに1つ上がる。
