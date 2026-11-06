@@ -17,6 +17,9 @@
 // - PUT  /api/current         選ぶマップを変える       {name}
 // - GET  /api/map[?name=]     マップの JSON と版番号（name を省くと今選んでいるもの）
 // - PUT  /api/map[?name=]     マップを丸ごと置き換える {baseVersion, map}。版が古ければ 409 と最新を返す
+// - GET  /api/outline[?name=][&node=][&ids=1]
+//                             マップを箇条書きの文字にする。ids=1 で ID と状態つき（CLI の show）、無ければ Markdown（export）。
+//                             node で1つの枝だけ（ID・完全一致の名前・経路）
 // - POST /api/op[?name=]      名前・ID・経路で指した操作を当てる {op, args}
 // - POST /api/import          ファイル時代のマップをまとめて入れる {maps: {名前: マップ}, current?, replace?}
 // - GET  /api/ws              変更を WebSocket で流す（map / current / maps）
@@ -24,7 +27,7 @@
 // 書き込みは同期の SQL だけで行い、途中で await しない。だから読んでから書くまでに別の書き込みが割り込まない。
 // リンクの題名を読み込む操作（add <URL> など）は、マップを読む前にページを取りに行く。
 import { DurableObject } from 'cloudflare:workers';
-import { cleanName, normalize, newMap, isMap, roots, cleanUrl } from '../lib/map.ts';
+import { cleanName, normalize, newMap, isMap, roots, cleanUrl, resolve, outline } from '../lib/map.ts';
 import type { MindMap } from '../lib/map.ts';
 import { applyOp, OPS, urlsToTitle } from '../lib/ops.ts';
 import { unfurl, privateHost } from './unfurl.ts';
@@ -359,6 +362,14 @@ export class MindmapStore extends DurableObject<Env> {
       if (!got) throw new HttpError(404, `マップ「${name}」がありません。maps で一覧を見るか、new <題名> --map ${name} で作ってください`);
       return json(200, { ...got.map, name, version: got.version });
     }
+    if (p === '/api/outline' && method === 'GET') {
+      const name = this.target(url);
+      const got = this.read(name);
+      if (!got) throw new HttpError(404, `マップ「${name}」がありません。maps で一覧を見るか、new <題名> --map ${name} で作ってください`);
+      const ref = url.searchParams.get('node');
+      const text = outline(got.map, { withIds: url.searchParams.get('ids') === '1', from: ref ? resolve(got.map, ref) : null });
+      return json(200, { name, version: got.version, text });
+    }
     if (p === '/api/map' && method === 'PUT') {
       const name = this.target(url);
       const map = body.map;
@@ -391,8 +402,10 @@ export class MindmapStore extends DurableObject<Env> {
       if (!maps || typeof maps !== 'object') throw new HttpError(400, 'maps（名前 → マップ）が必要です');
       const hadCurrent = !!this.current();
       const added: string[] = [], replaced: string[] = [], skipped: string[] = [];
-      for (const [raw, map] of Object.entries(maps)) {
+      for (const [raw, given] of Object.entries(maps)) {
         const name = cleanName(raw);
+        // ファイル時代の古い形（rootId など）もここで直す。CLI はファイルを読んだまま送る
+        const map = given && typeof given === 'object' ? normalize(given as MindMap) : given;
         if (!isMap(map)) throw new HttpError(400, `マップ「${name}」の形が正しくありません`);
         const prev = this.row(name);
         if (prev && !body.replace) { skipped.push(name); continue; }
