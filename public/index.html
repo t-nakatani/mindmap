@@ -1338,29 +1338,47 @@
     const s = window.getSelection();
     return !!(s && !s.isCollapsed && !editor.contains(s.anchorNode));
   }
-  // ⌘C・⌘X・⌘V は copy・cut・paste のイベントで受ける。イベントが来ないブラウザ向けに、キーを押した直後に代わりを走らせる。
-  let pendingClip = null;
+  // ⌘C・⌘X・⌘V は copy・cut・paste のイベントで受ける。イベントが来ないブラウザ向けに、キーを押して少し待ってから代わりを走らせる。
+  // macOS の Chrome などでは、イベントはキーより遅れて（メニューを通って）届く。待つ時間はその遅れより長くとり、
+  // それでも代わりが先に走ったときは、あとから届いたイベントで同じ操作を繰り返さない。
+  // 繰り返すと、切り取りで選択が移った先の枝まで消え、貼り付けでは貼ったものの下にもう一度貼っていた。
+  const CLIP_FALLBACK_MS = 100;
+  let pendingClip = null, clipDone = null;
   function onClipKey(key) {
-    pendingClip = key;
+    pendingClip = key; clipDone = null;
     setTimeout(() => {
       if (pendingClip !== key) return;
       pendingClip = null;
-      if (key === 'v') { if (clip) pasteTrees(clip.trees); return; }
+      // 印は、代わりが本当に写したか貼ったときだけ付ける
+      if (key === 'v') { if (clip) { pasteTrees(clip.trees); clipDone = { key, at: performance.now() }; } return; }
       const text = copySelected(key === 'x');
-      if (text !== null && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
-    }, 0);
+      if (text === null) return;
+      clipDone = { key, at: performance.now() };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+    }, CLIP_FALLBACK_MS);
+  }
+  // そのキーの代わりが直前に走ったか。印は1回で消し、少し経ったものは別の操作（メニューからの切り取りなど）とみなす
+  const CLIP_DONE_MS = 1000;
+  function takeClipDone(key) {
+    const done = !!clipDone && clipDone.key === key && performance.now() - clipDone.at < CLIP_DONE_MS;
+    clipDone = null;
+    return done;
   }
   for (const type of ['copy', 'cut']) document.addEventListener(type, e => {
     pendingClip = null;
+    const done = takeClipDone(type === 'cut' ? 'x' : 'c');
     if (textClipboard(e)) return;
-    const text = copySelected(type === 'cut');
+    // 代わりが写し終えている。クリップボードにはその中身を書くだけにする
+    const text = done ? (clip ? clip.text : null) : copySelected(type === 'cut');
     if (text === null) return;
     e.preventDefault();
     e.clipboardData.setData('text/plain', text);
   });
   document.addEventListener('paste', e => {
     pendingClip = null;
+    const done = takeClipDone('v');
     if (readOnly || textClipboard(e)) return;
+    if (done) { e.preventDefault(); return; }
     const text = e.clipboardData.getData('text/plain').replace(/\r\n/g, '\n');
     const trees = clip && text.trim() === clip.text.trim() ? clip.trees : parseOutline(text);
     if (!trees.length) return;
