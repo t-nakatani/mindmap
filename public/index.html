@@ -1348,14 +1348,22 @@
     pendingClip = key; clipDone = null;
     setTimeout(() => {
       if (pendingClip !== key) return;
-      pendingClip = null; clipDone = key;
-      if (key === 'v') { if (clip) pasteTrees(clip.trees); return; }
+      pendingClip = null;
+      // 印は、代わりが本当に写したか貼ったときだけ付ける
+      if (key === 'v') { if (clip) { pasteTrees(clip.trees); clipDone = { key, at: performance.now() }; } return; }
       const text = copySelected(key === 'x');
-      if (text !== null && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+      if (text === null) return;
+      clipDone = { key, at: performance.now() };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
     }, CLIP_FALLBACK_MS);
   }
-  // そのキーの代わりがもう走ったか。印は1回で消す
-  function takeClipDone(key) { const done = clipDone === key; clipDone = null; return done; }
+  // そのキーの代わりが直前に走ったか。印は1回で消し、少し経ったものは別の操作（メニューからの切り取りなど）とみなす
+  const CLIP_DONE_MS = 1000;
+  function takeClipDone(key) {
+    const done = !!clipDone && clipDone.key === key && performance.now() - clipDone.at < CLIP_DONE_MS;
+    clipDone = null;
+    return done;
+  }
   for (const type of ['copy', 'cut']) document.addEventListener(type, e => {
     pendingClip = null;
     const done = takeClipDone(type === 'cut' ? 'x' : 'c');
