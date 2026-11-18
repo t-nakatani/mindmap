@@ -13,6 +13,7 @@
 // - GET  /api/maps            マップの一覧と、今選んでいる名前
 // - POST /api/maps            新しいマップを作る       {name, title, select?, replace?}
 // - PATCH  /api/maps          マップの名前を変える     {name, newName}
+// - PUT    /api/maps          一覧の並びを変える       {names}（書かなかったマップは後ろに名前の順）
 // - DELETE /api/maps          マップを消す（最後の1つは消せない） {name}
 // - PUT  /api/current         選ぶマップを変える       {name}
 // - GET  /api/map[?name=]     マップの JSON と版番号（name を省くと今選んでいるもの）
@@ -47,7 +48,7 @@ export function storeStub(env: Env, name: { space: string } | 'main'): DurableOb
 }
 
 export interface MapInfo { name: string; title: string; roots: number; version: number; updatedAt: string }
-type MapRow = { name: string; data: string; version: number; title: string; roots: number; updated_at: string };
+type MapRow = { name: string; data: string; version: number; title: string; roots: number; updated_at: string; position: number | null };
 
 class HttpError extends Error {
   status: number;
@@ -73,6 +74,10 @@ export class MindmapStore extends DurableObject<Env> {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS maps (
       name TEXT PRIMARY KEY, data TEXT NOT NULL, version INTEGER NOT NULL,
       title TEXT NOT NULL, roots INTEGER NOT NULL, updated_at TEXT NOT NULL)`);
+    // 一覧の並び。NULL のマップは並べたものの後ろに名前の順で続く
+    if (!this.sql.exec("SELECT 1 FROM pragma_table_info('maps') WHERE name = 'position'").toArray().length) {
+      this.sql.exec('ALTER TABLE maps ADD COLUMN position INTEGER');
+    }
     this.sql.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS links (url TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at INTEGER NOT NULL)');
     // ブラウザが接続を保つために送る ping には、DO を起こさずに pong を返す
@@ -189,9 +194,19 @@ export class MindmapStore extends DurableObject<Env> {
     return r ? { map: normalize(JSON.parse(r.data)), version: r.version } : null;
   }
   list(): MapInfo[] {
-    return this.sql.exec<MapRow>('SELECT name, title, roots, version, updated_at FROM maps').toArray()
-      .map(r => ({ name: r.name, title: r.title, roots: r.roots, version: r.version, updatedAt: r.updated_at }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    return this.sql.exec<MapRow>('SELECT name, title, roots, version, updated_at, position FROM maps').toArray()
+      .sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity) || a.name.localeCompare(b.name, 'ja'))
+      .map(r => ({ name: r.name, title: r.title, roots: r.roots, version: r.version, updatedAt: r.updated_at }));
+  }
+  /** 一覧をこの順に並べる。書かれなかったマップは後ろに名前の順で続く。 */
+  reorder(names: unknown): void {
+    if (!Array.isArray(names)) throw new HttpError(400, 'names（マップ名の並び）が必要です');
+    const order = names.map(n => cleanName(n));
+    if (new Set(order).size !== order.length) throw new HttpError(400, '同じマップ名が2回あります');
+    for (const n of order) if (!this.row(n)) throw new HttpError(404, `マップ「${n}」がありません`);
+    this.sql.exec('UPDATE maps SET position = NULL');
+    order.forEach((n, i) => this.sql.exec('UPDATE maps SET position = ? WHERE name = ?', i, n));
+    this.broadcastMaps();
   }
   /** 書いて版を1つ上げ、つながっている画面に配る。新しい版を返す。 */
   write(name: string, map: MindMap, prevVersion: number): number {
@@ -339,6 +354,10 @@ export class MindmapStore extends DurableObject<Env> {
       this.broadcast({ type: 'renamed', from: name, to: newName });
       this.broadcastMaps();
       return json(200, { ok: true, name: newName, current: this.current() });
+    }
+    if (p === '/api/maps' && method === 'PUT') {
+      this.reorder(body.names);
+      return json(200, { ok: true, maps: this.list() });
     }
     if (p === '/api/maps' && method === 'DELETE') {
       const name = cleanName(body.name);
