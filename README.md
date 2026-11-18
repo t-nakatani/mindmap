@@ -126,7 +126,7 @@ CLI は `~/.config/mindmap/env` に `MINDMAP_URL` と `MINDMAP_TOKEN`（`API_TOK
 - `src/worker.ts`: 入口。`/api/` を、名簿 `main` で権限を確かめてから領域の Durable Object へ渡す。
 - `src/auth.ts`: Google ログインとセッション、API トークンの確認。名簿 `main` の中で動く。
 - `src/directory.ts`: 名簿の表。アカウント・領域・共有と、領域を分ける前のマップの移し替えに使う行。
-- `src/store.ts`: Durable Object。名簿 `main`（`GET /api/spaces`、`GET/POST/DELETE /api/shares`）と、領域 `space:<領域ID>` の2つの役で使う。領域は全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST /api/maps`、`PUT /api/current`、`GET /api/outline`（CLI の show・export の文字）、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）、`GET /api/unfurl?url=`（リンクの題名など。領域ごとに1週間覚えておく）。書き込みは同期の SQL だけで行うので、順に処理される。リンクの題名を読み込む操作は、マップを読む前にページを取りに行く。
+- `src/store.ts`: Durable Object。名簿 `main`（`GET /api/spaces`、`GET/POST/DELETE /api/shares`）と、領域 `space:<領域ID>` の2つの役で使う。領域は全マップと今選んでいるマップを SQLite に持つ。`GET/PUT /api/map?name=`、`GET/POST/PUT /api/maps`（PUT は一覧の並び）、`PUT /api/current`、`GET /api/outline`（CLI の show・export の文字）、`POST /api/op`、`POST /api/import`、`GET /api/ws`（WebSocket）、`GET /api/unfurl?url=`（リンクの題名など。領域ごとに1週間覚えておく）。書き込みは同期の SQL だけで行うので、順に処理される。リンクの題名を読み込む操作は、マップを読む前にページを取りに行く。
 - `src/unfurl.ts`: リンクの展開。ページの `<head>` だけを読み（5 秒・512KB まで）、og:title・`<title>`・og:site_name・説明・og:image・アイコンを返す。
 - `lib/map.ts` と `lib/ops.ts`: 名前・ID・経路でノードを指して追加・改名・移動・削除・折りたたみ・リンク、Markdown の箇条書きの取り込みと書き出し（リンクは `[文字](URL)`）。Durable Object が使う。
 - `cli/`: API を呼ぶ Rust の CLI。ノードの解決や箇条書きの書き出し（`GET /api/outline`）はサーバーに任せる。cargo-dist で GitHub Releases に配る（タグ `v*` の push）。

@@ -219,6 +219,8 @@
     padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8); border-radius: var(--radius-md); cursor: pointer; }
   .map-row.active, .map-row.editing, .map-row.confirming { background: var(--color-bg-hover); }
   .map-row.editing, .map-row.confirming { cursor: default; }
+  .map-row:not(.editing) { user-select: none; }
+  #map-list.reordering, #map-list.reordering .map-row { cursor: grabbing; }
   .map-row > .icon { color: var(--color-text-accent); visibility: hidden; }
   .map-row.current > .icon { visibility: visible; }
   .map-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -626,6 +628,8 @@
   let mapsList = [];
   // active: ↑↓ とポインタで当たっている行。renaming・confirming: 名前を変えている・削除を確かめているマップ。creating: 下で新しいマップの名前を入れている
   const menu = { active: 0, items: [], renaming: null, confirming: null, creating: false };
+  // 行をドラッグして並べ替えている間の状態。{ row, startY, moved }
+  let rowDrag = null, rowDragEnded = false;
   const icon = id => `<svg class="icon"><use href="#i-${id}"/></svg>`;
   function setMapName(name) {
     mapName = name || null;
@@ -635,8 +639,8 @@
   }
   function renderMaps(list) {
     mapsList = list.maps || [];
-    // 名前を入れている途中は描き直さない（入力が消えないように）
-    if (isMapMenuOpen() && !menu.renaming && !menu.creating) renderMapMenu();
+    // 名前を入れている途中とドラッグ中は描き直さない（入力や動かしている行が消えないように）
+    if (isMapMenuOpen() && !menu.renaming && !menu.creating && !rowDrag) renderMapMenu();
   }
   async function refreshMaps() {
     try { const r = await fetch('/api/maps' + query()); if (r.ok) { const list = await r.json(); renderMaps(list); return list; } } catch (e) { /* サーバーなし */ }
@@ -807,9 +811,46 @@
   mapSearch.addEventListener('input', () => { resetMenuModes(); menu.active = 0; renderMapMenu(); });
   mapList.addEventListener('pointermove', e => {
     const row = e.target.closest('.map-row');
-    if (row && Number(row.dataset.i) !== menu.active && !menu.renaming && !menu.confirming) { menu.active = Number(row.dataset.i); showActive(); }
+    if (row && !rowDrag && Number(row.dataset.i) !== menu.active && !menu.renaming && !menu.confirming) { menu.active = Number(row.dataset.i); showActive(); }
   });
+  // 行をドラッグして並べ替える。探している間（一部しか出ていない）と閲覧のみの領域ではしない
+  mapList.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || readOnly || mapSearch.value.trim() || menu.renaming || menu.confirming || e.target.closest('[data-act]')) return;
+    const row = e.target.closest('.map-row'); if (!row || !menu.items[Number(row.dataset.i)]) return;
+    rowDrag = { row, startY: e.clientY, moved: false };
+  });
+  document.addEventListener('pointermove', e => {
+    if (!rowDrag) return;
+    if (!rowDrag.moved) {
+      if (Math.abs(e.clientY - rowDrag.startY) < 4) return;
+      rowDrag.moved = true; rowDrag.row.classList.add('dragging'); mapList.classList.add('reordering');
+      menu.active = Number(rowDrag.row.dataset.i); showActive();
+    }
+    const box = mapList.getBoundingClientRect();
+    if (e.clientY < box.top + 24) mapList.scrollTop -= 8; else if (e.clientY > box.bottom - 24) mapList.scrollTop += 8;
+    const next = [...mapList.children].find(r => r !== rowDrag.row && e.clientY < r.getBoundingClientRect().top + r.offsetHeight / 2);
+    if (next) { if (rowDrag.row.nextSibling !== next) mapList.insertBefore(rowDrag.row, next); }
+    else if (mapList.lastChild !== rowDrag.row) mapList.appendChild(rowDrag.row);
+  });
+  function endRowDrag(commit) {
+    const d = rowDrag; rowDrag = null;
+    if (!d || !d.moved) return;
+    d.row.classList.remove('dragging'); mapList.classList.remove('reordering');
+    // 離した直後の click で、動かした行のマップに切り替わらないようにする
+    rowDragEnded = true; setTimeout(() => { rowDragEnded = false; }, 0);
+    const names = [...mapList.children].map(r => menu.items[Number(r.dataset.i)].name);
+    const moved = menu.items[Number(d.row.dataset.i)].name;
+    if (commit && names.some((n, i) => n !== mapsList[i].name)) {
+      mapsList = names.map(n => mapsList.find(m => m.name === n));
+      mapsRequest('PUT', { names }).then(body => { if (!body) refreshMaps(); });
+    }
+    menu.active = mapsList.findIndex(m => m.name === moved);
+    renderMapMenu();
+  }
+  document.addEventListener('pointerup', () => endRowDrag(true));
+  document.addEventListener('pointercancel', () => endRowDrag(false));
   mapList.addEventListener('click', e => {
+    if (rowDragEnded) return;
     const row = e.target.closest('.map-row'); if (!row) return;
     const m = menu.items[Number(row.dataset.i)]; if (!m) return;
     const act = e.target.closest('[data-act]');
