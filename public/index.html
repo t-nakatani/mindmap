@@ -1315,7 +1315,8 @@
     nodeMenu.style.left = x + 'px';
     nodeMenu.style.top = y + 'px';
     nodeMenu.classList.add('show');
-    const pad = 8, r = nodeMenu.getBoundingClientRect();
+    const pad = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-8'));
+    const r = nodeMenu.getBoundingClientRect();
     nodeMenu.style.left = Math.max(pad, Math.min(x, window.innerWidth - r.width - pad)) + 'px';
     nodeMenu.style.top = Math.max(pad, Math.min(y, window.innerHeight - r.height - pad)) + 'px';
     if (!item.disabled) item.focus({ preventScroll: true });
