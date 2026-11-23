@@ -239,6 +239,12 @@
   #map-footer .btn { width: 100%; justify-content: flex-start; padding: 0 var(--space-8); }
   #map-footer .map-row { min-height: var(--size-control); padding: 0 0 0 var(--space-8); }
   #map-footer .map-row > .icon { visibility: visible; color: var(--color-text-primary); }
+  /* ノードの右クリックメニュー。項目はボタンを足すだけで増やせる */
+  .context-menu { position: absolute; z-index: 4; display: none; flex-direction: column; min-width: 180px;
+    padding: var(--space-4); border-radius: var(--radius-lg); background: var(--color-bg-popover);
+    border: 1px solid var(--color-border-panel); box-shadow: var(--shadow-popover); }
+  .context-menu.show { display: flex; }
+  .context-menu .btn { width: 100%; justify-content: flex-start; padding: 0 var(--space-8); }
   /* リンクのパネル（Figma: Panel/Link・Panel/Link edit）。ノードのそばに出すので、位置は transform で決める */
   #link-panel, #link-edit { left: 0; top: 0; right: auto; z-index: 2; width: min(340px, calc(100% - 16px)); max-height: none;
     padding: var(--space-12) var(--space-12) var(--space-8); gap: var(--space-8); }
@@ -456,6 +462,7 @@
   <section>
     <h3>マウス</h3>
     <dl class="keys">
+      <dt><kbd>右クリック</kbd></dt><dd>ノードのメニューを開く（全ノードをしまう）</dd>
       <dt><kbd>ダブルクリック</kbd></dt><dd>ノード：文字を編集　背景：新しい中心ノード</dd>
       <dt><kbd>ドラッグ</kbd></dt><dd>並べ替え・中心の左右へ移動・別のノードに重ねて付け替え</dd>
       <dt><kbd>⇧ ドラッグ</kbd></dt><dd>背景：範囲を選択　中心ノード：別のマップの枝にする</dd>
@@ -465,6 +472,11 @@
     </dl>
   </section>
   <div id="account" hidden><span><span id="account-email"></span> でログイン中</span><button id="btn-logout" class="btn" type="button">ログアウト</button></div>
+</div>
+
+<!-- ノードの右クリックメニュー -->
+<div id="node-menu" class="context-menu" role="menu" aria-label="ノード">
+  <button type="button" class="btn" role="menuitem" data-act="collapse-all">全ノードをしまう</button>
 </div>
 
 <div id="login">
@@ -531,6 +543,7 @@
   const multi = { nodes: new Set(), boards: new Set() };
   let marquee = null; // ドラッグ中の枠 { x0, y0, x1, y1, startX, startY, moved }
   const marqueeEl = document.getElementById('marquee');
+  const nodeMenu = document.getElementById('node-menu');
 
   // ---------- データ ----------
   function makeNode(text, parentId) {
@@ -652,6 +665,7 @@
     try { const r = await fetch('/api/map' + query({ name })); if (r.ok) data = await r.json(); } catch (e) { /* サーバーなし */ }
     if (!data || !Array.isArray(data.nodes)) return;
     if (editingId) { editor.style.display = 'none'; editingId = null; }
+    closeNodeMenu();
     clearTimeout(saveTimer); saveTimer = null;
     setMapName(name);
     undoStack = []; redoStack = [];
@@ -807,6 +821,7 @@
   // メニューの外を押したら閉じる
   document.addEventListener('pointerdown', e => {
     if (isMapMenuOpen() && !mapMenu.contains(e.target) && !mapBtn.contains(e.target) && !e.target.closest('#btn-add-map')) closeMapMenu();
+    if (nodeMenu.classList.contains('show') && !nodeMenu.contains(e.target)) closeNodeMenu();
   }, true);
   mapSearch.addEventListener('input', () => { resetMenuModes(); menu.active = 0; renderMapMenu(); });
   mapList.addEventListener('pointermove', e => {
@@ -982,7 +997,7 @@
   document.getElementById('btn-help-close').addEventListener('click', () => setPanel('help', false));
   // Esc はノードの選択を外す前に、開いているパネルを閉じる。文字の編集中は編集のほうを取りやめる。
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !editingId && !editingBoardId && !e.isComposing && (mapMenuEscape() || closeLinkEditor() || closePanels())) { e.preventDefault(); e.stopImmediatePropagation(); }
+    if (e.key === 'Escape' && !editingId && !editingBoardId && !e.isComposing && (closeNodeMenu() || mapMenuEscape() || closeLinkEditor() || closePanels())) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
   document.getElementById('share-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -1067,6 +1082,7 @@
   });
   // 外からの版で置き換える。まだ送っていない手元の変更は捨てる（⌘Z で戻せる）。
   function applyExternal(data, newVersion) {
+    closeNodeMenu();
     if (editingId) { editor.style.display = 'none'; editingId = null; }
     clearTimeout(saveTimer); saveTimer = null;
     pushUndo();
@@ -1262,12 +1278,56 @@
 
   function toggleCollapse(id) {
     const n = nodes.get(id);
-    if (!n || isRoot(n) || !n.children.length) return;
+    if (!n || !n.children.length) return;
     pushUndo();
     n.collapsed = !n.collapsed;
     if (n.collapsed && selectedId && subtreeIds(n).has(selectedId)) selectedId = id;
     commit();
   }
+  // 子を持つノードを、中心ノードも含めてすべて閉じる。中心を閉じないと、直下だけのマップは何もしまえない。
+  function collapseAll() {
+    if (readOnly) return;
+    const open = [...nodes.values()].filter(n => n.children.length && !n.collapsed);
+    if (!open.length) return;
+    pushUndo();
+    for (const n of open) n.collapsed = true;
+    if (selectedId) {
+      let n = nodes.get(selectedId);
+      while (n && n.parentId) {
+        const p = nodes.get(n.parentId);
+        if (p.collapsed) selectedId = p.id;
+        n = p;
+      }
+    }
+    commit();
+  }
+  function closeNodeMenu() {
+    if (!nodeMenu.classList.contains('show')) return false;
+    nodeMenu.classList.remove('show');
+    return true;
+  }
+  // 右クリックのボタンを離した瞬間に、開いたばかりの項目を押したことにしない
+  let nodeMenuOpenedAt = 0;
+  function openNodeMenu(x, y) {
+    nodeMenuOpenedAt = performance.now();
+    const item = nodeMenu.querySelector('[data-act=collapse-all]');
+    item.disabled = ![...nodes.values()].some(n => n.children.length && !n.collapsed);
+    nodeMenu.style.left = x + 'px';
+    nodeMenu.style.top = y + 'px';
+    nodeMenu.classList.add('show');
+    const pad = 8, r = nodeMenu.getBoundingClientRect();
+    nodeMenu.style.left = Math.max(pad, Math.min(x, window.innerWidth - r.width - pad)) + 'px';
+    nodeMenu.style.top = Math.max(pad, Math.min(y, window.innerHeight - r.height - pad)) + 'px';
+    if (!item.disabled) item.focus({ preventScroll: true });
+  }
+  nodeMenu.addEventListener('contextmenu', e => e.preventDefault());
+  nodeMenu.addEventListener('click', e => {
+    if (performance.now() - nodeMenuOpenedAt < 300) return;
+    const act = e.target.closest('[data-act]');
+    if (!act || act.disabled) return;
+    closeNodeMenu();
+    if (act.dataset.act === 'collapse-all') collapseAll();
+  });
   function descendantCount(n) { let c = 0; for (const id of n.children) c += 1 + descendantCount(nodes.get(id)); return c; }
 
   // ---------- 切り取り・コピー・貼り付け ----------
@@ -1767,6 +1827,7 @@
     hCache = new Map();
     for (const root of roots()) {
       root.cx = root.dx; root.cy = root.dy; root.depth = 0;
+      if (root.collapsed) { hideSubtree(root); continue; }
       const kids = root.children.map(id => nodes.get(id));
       placeStack(root, kids.filter(k => k.side === 'right'), 1);
       placeStack(root, kids.filter(k => k.side === 'left'), -1);
@@ -1814,6 +1875,15 @@
     }
   }
   function requestDraw() { if (!animating) { animating = true; requestAnimationFrame(frame); } }
+  // 折りたたみの印を出す側。中心ノードは枝のある側（両側なら右）、ほかは親の反対側。
+  function toggleDir(n) {
+    if (!isRoot(n)) return nodes.get(n.parentId).cx <= n.cx ? 1 : -1;
+    if (layoutOf(n) === 'left') return -1;
+    if (layoutOf(n) === 'right') return 1;
+    let right = 0, left = 0;
+    for (const id of n.children) (nodes.get(id).side === 'left' ? left++ : right++);
+    return left > right ? -1 : 1;
+  }
   function initVisuals() {
     for (const n of nodes.values()) {
       if (n.vx != null) continue;
@@ -1865,9 +1935,10 @@
         e.text.setAttribute('x', n.w / 2); e.text.setAttribute('y', n.h / 2);
         if (e.text.textContent !== n.text) e.text.textContent = n.text;
       }
-      if (n.parentId && n.children.length) {
-        const p = nodes.get(n.parentId);
-        const d = p.cx <= n.cx ? 1 : -1;
+      if (n.children.length) {
+        // 中心ノードに枝の色はない。しまう印は白文字が読める枝の青を使う。
+        const toggleColor = color || 'var(--color-branch-5)';
+        const d = toggleDir(n);
         // 閉じているときは子孫の数を入れる。2桁からは横に伸びる丸にする
         const label = n.collapsed ? String(descendantCount(n)) : '';
         meas.font = '700 11px ' + FONT_FAMILY;
@@ -1875,8 +1946,8 @@
         e.toggle.style.display = '';
         e.toggle.setAttribute('transform', `translate(${d === 1 ? n.w + TOGGLE_GAP + pw / 2 : -TOGGLE_GAP - pw / 2},${n.h / 2})`);
         e.tPill.setAttribute('x', -pw / 2); e.tPill.setAttribute('width', pw);
-        e.tPill.style.stroke = color; e.tDash.style.stroke = color;
-        e.g.style.setProperty('--toggle-fill', color);
+        e.tPill.style.stroke = toggleColor; e.tDash.style.stroke = toggleColor;
+        e.g.style.setProperty('--toggle-fill', toggleColor);
         e.tDash.style.display = n.collapsed ? 'none' : '';
         if (e.tText.textContent !== label) e.tText.textContent = label;
       } else e.toggle.style.display = 'none';
@@ -2044,6 +2115,18 @@
     return { parentId: p.id, side: dir < 0 ? 'left' : 'right', beforeId: before && before.id, afterId: after && after.id,
       line: { x1: Math.min(inner, outer), x2: Math.max(inner, outer), y1: ly, y2: ly } };
   }
+  svg.addEventListener('contextmenu', e => {
+    const g = e.target.closest && e.target.closest('.node');
+    if (!g || readOnly) return;
+    e.preventDefault();
+    if (editingId) finishEdit();
+    finishBoardEdit();
+    closeLinkEditor();
+    selectedId = g.dataset.id;
+    selectedBoardId = null;
+    openNodeMenu(e.clientX, e.clientY);
+    requestDraw();
+  });
   svg.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     const g = e.target.closest && e.target.closest('.node');
@@ -2065,6 +2148,8 @@
     closeLinkEditor();
     // リンクは ↗ か、⌘ を押しながらのクリックで開く
     if (g && (e.target.closest('.link-open') || ((e.metaKey || e.ctrlKey) && nodes.get(g.dataset.id).url))) { openLink(g.dataset.id); return; }
+    // macOS では Ctrl クリックが右クリックになる。ノード上ではメニューに任せて、ドラッグにはしない
+    if (g && e.ctrlKey) return;
     if (g && e.target.closest('.toggle')) { if (!readOnly) { finishEdit(); toggleCollapse(g.dataset.id); } return; }
     if (g && readOnly) { selectedId = g.dataset.id; requestDraw(); return; }
     if (g) {
@@ -2218,6 +2303,7 @@
     else if (!g) { e.preventDefault(); const w = toWorld(e.clientX, e.clientY); addRoot(w.x, w.y); }
   });
   svg.addEventListener('wheel', e => {
+    closeNodeMenu();
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
     else { view.tx -= e.deltaX; view.ty -= e.deltaY; requestDraw(); }
@@ -2244,7 +2330,13 @@
     requestDraw();
   }
   window.addEventListener('keydown', e => {
-    if (e.target === spaceSelect || (e.target.closest && e.target.closest('.popover'))) return;
+    // メニューが開いているあいだは、ノードの削除や編集にキーを渡さない
+    if (nodeMenu.classList.contains('show') && !(e.target.closest && e.target.closest('#node-menu'))) {
+      closeNodeMenu();
+      e.preventDefault();
+      return;
+    }
+    if (e.target === spaceSelect || (e.target.closest && e.target.closest('.popover, .context-menu'))) return;
     const meta = e.metaKey || e.ctrlKey;
     if (editingId) {
       // 日本語入力の変換中や確定の Enter・Esc・Tab は IME に任せる。Safari は確定の Enter で isComposing が false になるので keyCode も見る
@@ -2316,7 +2408,7 @@
   // 枝のボタンは、選択中のノードを含む枝（中心ノードの子）を左右へ動かす
   for (const b of sideButtons) b.addEventListener('click', () => selectedId && setSide(selectedId, b.dataset.side));
   document.querySelectorAll('button').forEach(b => b.addEventListener('pointerdown', e => e.preventDefault()));
-  window.addEventListener('resize', requestDraw);
+  window.addEventListener('resize', () => { closeNodeMenu(); requestDraw(); });
   // 操作の一覧は、前に開いたままにしていたら開いて始める（既定は閉じる）。
   try { if (localStorage.getItem('mindmap-help-open') === '1') setPanel('help', true); } catch (e) { /* 無視 */ }
 
