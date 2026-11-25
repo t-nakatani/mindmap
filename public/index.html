@@ -462,7 +462,7 @@
   <section>
     <h3>マウス</h3>
     <dl class="keys">
-      <dt><kbd>右クリック</kbd></dt><dd>ノードのメニューを開く（全ノードをしまう）</dd>
+      <dt><kbd>右クリック</kbd></dt><dd>ノードのメニューを開く（この下をしまう）</dd>
       <dt><kbd>ダブルクリック</kbd></dt><dd>ノード：文字を編集　背景：新しい中心ノード</dd>
       <dt><kbd>ドラッグ</kbd></dt><dd>並べ替え・中心の左右へ移動・別のノードに重ねて付け替え</dd>
       <dt><kbd>⇧ ドラッグ</kbd></dt><dd>背景：範囲を選択　中心ノード：別のマップの枝にする</dd>
@@ -476,7 +476,7 @@
 
 <!-- ノードの右クリックメニュー -->
 <div id="node-menu" class="context-menu" role="menu" aria-label="ノード">
-  <button type="button" class="btn" role="menuitem" data-act="collapse-all">全ノードをしまう</button>
+  <button type="button" class="btn" role="menuitem" data-act="collapse-under">この下をしまう</button>
 </div>
 
 <div id="login">
@@ -1284,21 +1284,25 @@
     if (n.collapsed && selectedId && subtreeIds(n).has(selectedId)) selectedId = id;
     commit();
   }
-  // 子を持つノードを、中心ノードも含めてすべて閉じる。中心を閉じないと、直下だけのマップは何もしまえない。
-  function collapseAll() {
-    if (readOnly) return;
-    const open = [...nodes.values()].filter(n => n.children.length && !n.collapsed);
-    if (!open.length) return;
-    pushUndo();
-    for (const n of open) n.collapsed = true;
-    if (selectedId) {
-      let n = nodes.get(selectedId);
-      while (n && n.parentId) {
-        const p = nodes.get(n.parentId);
-        if (p.collapsed) selectedId = p.id;
-        n = p;
-      }
+  // 右クリックしたノードと、その下のノードだけを閉じる。兄弟や別の中心ノードには触れない。
+  function canCollapseUnder(id) {
+    const n = nodes.get(id);
+    if (!n) return false;
+    for (const sid of subtreeIds(n)) {
+      const k = nodes.get(sid);
+      if (k.children.length && !k.collapsed) return true;
     }
+    return false;
+  }
+  function collapseUnder(id) {
+    const n = nodes.get(id);
+    if (!n || readOnly || !canCollapseUnder(id)) return;
+    pushUndo();
+    for (const sid of subtreeIds(n)) {
+      const k = nodes.get(sid);
+      if (k.children.length) k.collapsed = true;
+    }
+    if (selectedId && selectedId !== n.id && subtreeIds(n).has(selectedId)) selectedId = n.id;
     commit();
   }
   function closeNodeMenu() {
@@ -1307,11 +1311,12 @@
     return true;
   }
   // 右クリックのボタンを離した瞬間に、開いたばかりの項目を押したことにしない
-  let nodeMenuOpenedAt = 0;
-  function openNodeMenu(x, y) {
+  let nodeMenuOpenedAt = 0, nodeMenuId = null;
+  function openNodeMenu(id, x, y) {
     nodeMenuOpenedAt = performance.now();
-    const item = nodeMenu.querySelector('[data-act=collapse-all]');
-    item.disabled = ![...nodes.values()].some(n => n.children.length && !n.collapsed);
+    nodeMenuId = id;
+    const item = nodeMenu.querySelector('[data-act=collapse-under]');
+    item.disabled = !canCollapseUnder(id);
     nodeMenu.style.left = x + 'px';
     nodeMenu.style.top = y + 'px';
     nodeMenu.classList.add('show');
@@ -1327,7 +1332,7 @@
     const act = e.target.closest('[data-act]');
     if (!act || act.disabled) return;
     closeNodeMenu();
-    if (act.dataset.act === 'collapse-all') collapseAll();
+    if (act.dataset.act === 'collapse-under') collapseUnder(nodeMenuId);
   });
   function descendantCount(n) { let c = 0; for (const id of n.children) c += 1 + descendantCount(nodes.get(id)); return c; }
 
@@ -2125,7 +2130,7 @@
     closeLinkEditor();
     selectedId = g.dataset.id;
     selectedBoardId = null;
-    openNodeMenu(e.clientX, e.clientY);
+    openNodeMenu(g.dataset.id, e.clientX, e.clientY);
     requestDraw();
   });
   svg.addEventListener('pointerdown', e => {
