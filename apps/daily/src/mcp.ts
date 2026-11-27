@@ -65,7 +65,14 @@ async function call(store: Store, name: string, a: Record<string, any>): Promise
       const r = await store(`/api/mindmap/map?name=${mapName(day)}`);
       if (r.status === 404) return `${day} のマップはまだありません（map_op の add で作れます。中心は「${label(day)}」）。`;
       const { version, name: _n, ...map } = await body(r);
-      return outline(normalize(map as MindMap), { withIds: true });
+      const m = normalize(map as MindMap);
+      // 両側に枝を出す中心では、子が左右どちらにあるかを添える（画面での分け方を読めるように）
+      const sides = m.nodes.filter(n => !n.parentId && (n.layout || 'both') === 'both').map(r => {
+        const kids = r.children.map(id => m.nodes.find(n => n.id === id)!).filter(Boolean);
+        const pick = (side: string) => kids.filter(k => (k.side || 'right') === side).map(k => `${k.text} (${k.id})`).join('、') || 'なし';
+        return `${r.text} (${r.id}) の枝の向き\n  右: ${pick('right')}\n  左: ${pick('left')}`;
+      });
+      return outline(m, { withIds: true }) + (sides.length ? '\n' + sides.join('\n') + '\n' : '');
     }
     case 'map_op': {
       const args = { ...(a.args || {}) };
