@@ -136,6 +136,12 @@
   .empty { padding: var(--space-8) var(--space-16); }
   .notice { margin-bottom: var(--space-16); padding: var(--space-12) var(--space-16); border-radius: var(--radius-md);
     border: 1px solid var(--color-border-panel); background: var(--color-bg-panel); color: var(--color-text-danger); }
+  /* ---------- ログイン ---------- */
+  .login { margin-top: var(--space-32); padding: var(--space-32) var(--space-24); text-align: center; background: var(--color-bg-panel);
+    border: 1px solid var(--color-border-panel); border-radius: var(--radius-lg); box-shadow: var(--shadow-panel); }
+  .login p { margin: 0 0 var(--space-16); color: var(--color-text-secondary); }
+  .login-btn { display: inline-flex; align-items: center; height: var(--size-control); padding: 0 var(--space-16); border-radius: var(--radius-md);
+    background: var(--color-bg-accent); color: var(--color-text-on-accent); text-decoration: none; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -147,8 +153,15 @@
     <button class="chip" id="today">今日</button>
     <span class="spacer"></span>
     <span class="muted" id="left"></span>
+    <span class="muted" id="who" hidden></span>
+    <button class="chip" id="logout" hidden>ログアウト</button>
   </header>
   <div class="notice" id="notice" hidden></div>
+  <section class="login" id="login" hidden>
+    <p>日次 ToDo を開くには、Google でログインしてください。</p>
+    <a class="login-btn" id="login-btn" href="/api/auth/google/start">Google でログイン</a>
+  </section>
+  <div id="app" hidden>
   <section class="map-card">
     <mind-map id="map"></mind-map>
     <div class="resize" id="resize" title="ドラッグで高さを変える"></div>
@@ -159,6 +172,7 @@
     <div class="empty muted" id="empty" hidden>まだ何もありません</div>
     <label class="add"><span>＋</span><input id="new" placeholder="ToDo を足す（Enter）" autocomplete="off"></label>
   </section>
+  </div>
 </div>
 <script type="module" src="/assets/main.js"></script>
 </body>
