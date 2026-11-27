@@ -10,10 +10,13 @@
 
 ## 使い方（ブラウザ）
 
+バンドラーを使うアプリはパッケージとして読む（`apps/daily/page/main.js` が例。esbuild でまとめている）。
+使わないページは、1ファイルにまとめた `dist/mindmap-element.js`（`npm run build -w @t-nakatani/mindmap-element`、mindmap-core を含む）を置いて読む。
+
 ```html
 <mind-map id="m" root-title="11/27（金）" style="height: 360px"></mind-map>
 <script type="module">
-  import { defineMindMap, httpStore, memoryStore } from './mindmap-element/index.js';
+  import { defineMindMap, httpStore, memoryStore } from '@t-nakatani/mindmap-element'; // または './mindmap-element.js'
   defineMindMap();                       // 'mind-map' で登録（名前は変えられる）
   const m = document.getElementById('m');
   m.store = httpStore({ base: '/api/mindmap', name: 'daily-2026-11-27' });
@@ -44,7 +47,7 @@ HTTP 以外（MCP Apps の `callServerTool`、localStorage、ほかの DB）も�
 ## 保存側（Cloudflare）
 
 ```ts
-import { MindmapMaps } from '../packages/mindmap-server/src/index.ts';
+import { MindmapMaps } from '@t-nakatani/mindmap-server';
 export class MyStore extends DurableObject {
   maps = new MindmapMaps(this.ctx);   // 表は mm_maps・mm_links（prefix で変えられる）
   async fetch(req: Request) {
@@ -60,4 +63,5 @@ export class MyStore extends DurableObject {
 ## これから
 
 - 本体（`public/index.html`）のキャンバスも `<mind-map>` に置き換え、同じ部品を使う。
-- npm に出す。そのときは `mindmap-server` から `mindmap-core` への相対 import をパッケージ名に替え、`mindmap-element` の `normalize` などを `mindmap-core` から取るようにする。
+- npm に出す。パッケージ名・ライセンスを決め、`mindmap-core`・`mindmap-server` を JS と型定義（.d.ts）に組んで出す（今は TS のまま exports しているので、バンドラーか Workers でしか読めない）。
+- リポジトリは npm workspaces（`packages/*`・`apps/*`）。部品どうしと apps は、パッケージ名で読み合う。

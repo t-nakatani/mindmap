@@ -6,7 +6,7 @@
 // - PATCH  /api/todos    {id, text?, done?}     直す
 // - DELETE /api/todos    {id}                   消す
 import { DurableObject } from 'cloudflare:workers';
-import { MindmapMaps, HttpError, json, readJson } from '../../../packages/mindmap-server/src/index.ts';
+import { MindmapMaps, HttpError, json, readJson } from '@t-nakatani/mindmap-server';
 
 export interface Todo { id: number; day: string; text: string; done: boolean; position: number; carriedFrom: string | null; carriedTo: string | null }
 type Row = { id: number; day: string; text: string; done: number; position: number; carried_from: string | null; carried_to: string | null };

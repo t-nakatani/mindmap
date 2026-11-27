@@ -19,10 +19,8 @@
 //   POST /op?name=         {op, args}。名前・ID・経路で指した操作を1つ当てる（mindmap-core の ops）
 //   GET  /unfurl?url=      リンク先の題名など（1 週間覚えておく）
 // 書き込みは同期の SQL だけで行い、途中で await しないので、読んでから書くまでに別の書き込みが割り込まない。
-import { cleanName, normalize, isMap, roots, cleanUrl } from '../../mindmap-core/src/map.ts';
-import type { MindMap } from '../../mindmap-core/src/map.ts';
-import { applyOp as applyMapOp, OPS } from '../../mindmap-core/src/ops.ts';
-import type { OpArgs } from '../../mindmap-core/src/ops.ts';
+import { cleanName, normalize, isMap, roots, cleanUrl, applyOp as applyMapOp, OPS } from '@t-nakatani/mindmap-core';
+import type { MindMap, OpArgs } from '@t-nakatani/mindmap-core';
 import { unfurl, privateHost } from './unfurl.ts';
 import type { LinkMeta } from './unfurl.ts';
 

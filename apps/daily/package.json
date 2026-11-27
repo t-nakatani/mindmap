@@ -5,14 +5,18 @@
   "type": "module",
   "description": "日次 ToDo。1日1ページで、先頭に <mind-map> を置く。",
   "scripts": {
-    "element": "rm -rf public/mindmap-element && cp -R ../../packages/mindmap-element/src public/mindmap-element",
-    "dev": "npm run element && mise exec -- cf dev",
-    "build": "npm run element && mise exec -- cf build",
-    "deploy": "npm run element && mise exec -- cf deploy",
+    "page": "esbuild page/main.js --bundle --format=esm --target=es2022 --minify --sourcemap --outfile=public/assets/main.js",
+    "dev": "npm run page && mise exec -- cf dev",
+    "build": "npm run page && mise exec -- cf build",
+    "deploy": "npm run page && mise exec -- cf deploy",
     "types": "mise exec -- cf workers types",
     "typecheck": "npm run types && tsc -p tsconfig.json"
   },
   "devDependencies": {
     "wrangler": "4.152.0"
+  },
+  "dependencies": {
+    "@t-nakatani/mindmap-element": "0.1.0",
+    "@t-nakatani/mindmap-server": "0.1.0"
   }
 }
