@@ -1,0 +1,23 @@
+{
+  "name": "@t-nakatani/mindmap-element",
+  "version": "0.1.0",
+  "description": "どのページにも置けるマインドマップの Web Component（<mind-map>）。保存先は store で差し替える。",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./http-store": "./src/http-store.js",
+    "./bundle": "./dist/mindmap-element.js"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "sideEffects": false,
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@t-nakatani/mindmap-core": "0.1.0"
+  },
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --format=esm --target=es2022 --minify --outfile=dist/mindmap-element.js"
+  }
+}

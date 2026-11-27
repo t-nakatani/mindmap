@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='26' height='24' rx='5' fill='%232f6feb'/%3E%3Cpath d='M10 17l4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  /* 色・余白・角丸は mindmap の public/index.html と同じ変数（Figma「Mind Map — UI」の Foundations）。 */
+  :root {
+    color-scheme: light;
+    --color-bg-canvas: #f5f4f0;
+    --color-bg-node: #ffffff;
+    --color-bg-panel: rgba(255, 255, 255, 0.88);
+    --color-bg-popover: #ffffff;
+    --color-bg-control: #ffffff;
+    --color-bg-hover: rgba(0, 0, 0, 0.05);
+    --color-bg-segment: rgba(0, 0, 0, 0.05);
+    --color-bg-segment-active: #ffffff;
+    --color-bg-accent: #2f6feb;
+    --color-bg-accent-subtle: rgba(47, 111, 235, 0.10);
+    --color-bg-board: rgba(0, 0, 0, 0.035);
+    --color-bg-kbd: rgba(127, 127, 127, 0.15);
+    --color-text-primary: #1f2328;
+    --color-text-secondary: #6b7280;
+    --color-text-accent: #2f6feb;
+    --color-text-link: #2f6feb;
+    --color-text-on-accent: #ffffff;
+    --color-text-on-branch: #ffffff;
+    --color-text-danger: #e4572e;
+    --color-border-node: #cfcbc2;
+    --color-border-panel: rgba(0, 0, 0, 0.08);
+    --color-border-control: rgba(0, 0, 0, 0.12);
+    --color-border-board: rgba(0, 0, 0, 0.14);
+    --color-border-accent: #2f6feb;
+    --color-shadow-soft: rgba(0, 0, 0, 0.06);
+    --color-shadow-strong: rgba(0, 0, 0, 0.10);
+    --color-branch-1: #e4572e;
+    --color-branch-2: #e9a21a;
+    --color-branch-3: #3fa34d;
+    --color-branch-4: #1f9e8f;
+    --color-branch-5: #2f6feb;
+    --color-branch-6: #7c5cde;
+    --color-branch-7: #c63fb5;
+    --color-branch-8: #e0456f;
+    --space-2: 2px; --space-4: 4px; --space-6: 6px; --space-8: 8px; --space-12: 12px;
+    --space-16: 16px; --space-20: 20px; --space-24: 24px; --space-32: 32px;
+    --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px; --radius-node: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-full: 999px;
+    --size-control: 32px; --size-icon: 16px;
+    --shadow-panel: 0 1px 2px var(--color-shadow-soft), 0 6px 20px var(--color-shadow-soft);
+    --shadow-popover: 0 2px 6px var(--color-shadow-soft), 0 12px 32px var(--color-shadow-strong);
+    --shadow-control: 0 1px 2px var(--color-shadow-strong);
+    --font-sans: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Helvetica Neue", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --color-bg-canvas: #1b1c20;
+      --color-bg-node: #2a2b31;
+      --color-bg-panel: rgba(32, 33, 38, 0.92);
+      --color-bg-popover: #202126;
+      --color-bg-control: #2a2b31;
+      --color-bg-hover: rgba(255, 255, 255, 0.08);
+      --color-bg-segment: rgba(255, 255, 255, 0.06);
+      --color-bg-segment-active: #383a42;
+      --color-bg-accent: #6ea2ff;
+      --color-bg-accent-subtle: rgba(110, 162, 255, 0.18);
+      --color-bg-board: rgba(255, 255, 255, 0.035);
+      --color-text-primary: #e8e8ea;
+      --color-text-secondary: #9ca3af;
+      --color-text-accent: #6ea2ff;
+      --color-text-link: #6ea2ff;
+      --color-text-on-accent: #1b1c20;
+      --color-text-danger: #f07a57;
+      --color-border-node: #45474f;
+      --color-border-panel: rgba(255, 255, 255, 0.10);
+      --color-border-control: rgba(255, 255, 255, 0.14);
+      --color-border-board: rgba(255, 255, 255, 0.16);
+      --color-border-accent: #6ea2ff;
+      --color-shadow-soft: rgba(0, 0, 0, 0.30);
+      --color-shadow-strong: rgba(0, 0, 0, 0.45);
+    }
+  }
+  html, body { margin: 0; background: var(--color-bg-canvas); color: var(--color-text-primary);
+    font-family: var(--font-sans); font-size: 14px; -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--color-border-accent); outline-offset: 2px; }
+  button { font: inherit; color: inherit; }
+  .page { max-width: 960px; margin: 0 auto; padding: var(--space-24) var(--space-16) var(--space-32); }
+
+  /* ---------- 日付の行 ---------- */
+  header { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-16); }
+  .icon-btn { width: var(--size-control); height: var(--size-control); display: inline-grid; place-items: center;
+    border: 1px solid var(--color-border-control); border-radius: var(--radius-md); background: var(--color-bg-control);
+    box-shadow: var(--shadow-control); cursor: pointer; }
+  .icon-btn:hover { background: var(--color-bg-hover); }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 var(--space-4); }
+  .chip { height: var(--size-control); padding: 0 var(--space-12); border: 1px solid var(--color-border-control);
+    border-radius: var(--radius-full); background: var(--color-bg-control); cursor: pointer; }
+  .chip:hover { background: var(--color-bg-hover); }
+  .chip[aria-current="date"] { background: var(--color-bg-accent-subtle); border-color: var(--color-border-accent); color: var(--color-text-accent); cursor: default; }
+  .spacer { flex: 1; }
+  .muted { color: var(--color-text-secondary); font-size: 13px; }
+
+  /* ---------- マインドマップ ---------- */
+  .map-card { background: var(--color-bg-panel); border: 1px solid var(--color-border-panel); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel); overflow: hidden; }
+  mind-map { height: var(--map-height, 360px); }
+  .resize { height: var(--space-12); cursor: ns-resize; display: grid; place-items: center; touch-action: none;
+    border-top: 1px solid var(--color-border-panel); }
+  .resize::before { content: ""; width: 40px; height: 4px; border-radius: var(--radius-full); background: var(--color-border-control); }
+
+  /* ---------- ToDo ---------- */
+  .todo-card { margin-top: var(--space-16); background: var(--color-bg-panel); border: 1px solid var(--color-border-panel);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-panel); padding: var(--space-8) 0; }
+  .todo-head { display: flex; align-items: baseline; gap: var(--space-8); padding: var(--space-8) var(--space-16); }
+  .todo-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: var(--space-12); padding: var(--space-8) var(--space-16); min-height: var(--size-control); }
+  li:hover { background: var(--color-bg-hover); }
+  li input[type=checkbox] { width: var(--size-icon); height: var(--size-icon); accent-color: var(--color-bg-accent); margin: 0; flex: none; }
+  li .text { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: inherit; padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-xs); }
+  li .text:focus { background: var(--color-bg-control); outline: 1px solid var(--color-border-control); }
+  li.done .text { color: var(--color-text-secondary); text-decoration: line-through; }
+  li .meta { font-size: 12px; color: var(--color-text-secondary); white-space: nowrap; }
+  li .del { visibility: hidden; border: 0; background: transparent; color: var(--color-text-secondary); cursor: pointer;
+    width: 24px; height: 24px; border-radius: var(--radius-sm); }
+  li:hover .del, li:focus-within .del { visibility: visible; }
+  li .del:hover { color: var(--color-text-danger); background: var(--color-bg-hover); }
+  .add { display: flex; align-items: center; gap: var(--space-12); padding: var(--space-8) var(--space-16); }
+  .add span { width: var(--size-icon); text-align: center; color: var(--color-text-secondary); }
+  .add input { flex: 1; border: 0; background: transparent; font: inherit; color: inherit; padding: var(--space-4); }
+  .add input::placeholder { color: var(--color-text-secondary); }
+  .add input:focus { outline: none; }
+  .empty { padding: var(--space-8) var(--space-16); }
+  .notice { margin-bottom: var(--space-16); padding: var(--space-12) var(--space-16); border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-panel); background: var(--color-bg-panel); color: var(--color-text-danger); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <button class="icon-btn" id="prev" title="前の日（[）" aria-label="前の日">←</button>
+    <h1 id="title"></h1>
+    <button class="icon-btn" id="next" title="次の日（]）" aria-label="次の日">→</button>
+    <button class="chip" id="today">今日</button>
+    <span class="spacer"></span>
+    <span class="muted" id="left"></span>
+  </header>
+  <div class="notice" id="notice" hidden></div>
+  <section class="map-card">
+    <mind-map id="map"></mind-map>
+    <div class="resize" id="resize" title="ドラッグで高さを変える"></div>
+  </section>
+  <section class="todo-card">
+    <div class="todo-head"><h2>ToDo</h2><span class="muted" id="count"></span></div>
+    <ul id="list"></ul>
+    <div class="empty muted" id="empty" hidden>まだ何もありません</div>
+    <label class="add"><span>＋</span><input id="new" placeholder="ToDo を足す（Enter）" autocomplete="off"></label>
+  </section>
+</div>
+<script type="module" src="/assets/main.js"></script>
+</body>
+</html>

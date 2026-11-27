@@ -1,0 +1,4 @@
+public/assets/
+.wrangler/
+.cloudflare/
+.dev.vars
