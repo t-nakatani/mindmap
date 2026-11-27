@@ -32,8 +32,7 @@ function notice(msg) { $('notice').hidden = !msg; $('notice').textContent = msg 
 async function api(method, path, body) {
   const r = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body && JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
-  if (r.status === 401) { loggedOut(); throw new Error('auth'); }
-  if (r.status === 403) { notice(data.error || '受け付けられませんでした'); throw new Error('forbidden'); }
+  if (r.status === 401 || r.status === 403) { notice('ログインが必要です。ページを読み込み直してください。'); throw new Error('auth'); }
   if (r.status === 503) { notice(data.error || 'ログインの設定がまだです。'); throw new Error('config'); }
   if (!r.ok) { notice(data.error || `うまくいきませんでした（${r.status}）`); throw new Error(String(r.status)); }
   notice('');
@@ -98,8 +97,7 @@ function show() {
   $('today').toggleAttribute('aria-current', day === today);
   if (day === today) $('today').setAttribute('aria-current', 'date');
   map.setAttribute('root-title', label(day));
-  if (!signedIn) return;
-  map.store = httpStore({ base: '/api/mindmap', name: `daily-${day}`, onUnauthorized: loggedOut });
+  map.store = httpStore({ base: '/api/mindmap', name: `daily-${day}` });
   todos = []; render();
   loadTodos();
 }
@@ -121,34 +119,4 @@ addEventListener('keydown', e => {
   if (e.key === ']') go(addDays(day, 1));
 });
 addEventListener('pagehide', () => map.flush?.());
-
-// ---------- ログイン ----------
-const AUTH_ERRORS = {
-  not_allowed: 'このアカウントではログインできません。許可されたメールアドレスの Google アカウントを選んでください。',
-  google_cancelled: 'ログインを取りやめました。',
-  google_state_expired: 'ログインに時間がかかりすぎました。もう一度試してください。',
-  google_not_configured: 'Google ログインの設定がまだです。',
-};
-let signedIn = false;
-function loggedOut() {
-  signedIn = false;
-  map.store = null;
-  $('app').hidden = true; $('login').hidden = false; $('who').hidden = true; $('logout').hidden = true;
-  $('login-btn').href = '/api/auth/google/start?back=' + encodeURIComponent(location.pathname);
-}
-$('logout').onclick = async () => {
-  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-  loggedOut();
-};
-(async () => {
-  const params = new URLSearchParams(location.search);
-  const err = params.get('auth');
-  if (err) { notice(AUTH_ERRORS[err] || `ログインできませんでした（${err}）`); history.replaceState(null, '', location.pathname); }
-  let me = null;
-  try { me = await (await fetch('/api/auth/me')).json(); } catch {}
-  if (!me || !me.authenticated) { $('title').textContent = label(day); loggedOut(); return; }
-  signedIn = true;
-  $('app').hidden = false; $('login').hidden = true;
-  if (me.email !== 'local') { $('who').textContent = me.email; $('who').hidden = false; $('logout').hidden = false; }
-  show();
-})();
+show();

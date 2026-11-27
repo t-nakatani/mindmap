@@ -1,5 +1,5 @@
 // 日次 ToDo の Worker（cf CLI が読む）。<mind-map> 部品の最初の利用者で、マインドマップ本体とは別の Worker・別のデータ。
-// ログインは Google（本体と同じ OpenID Connect。src/auth.ts）。ログインできるのは ALLOWED_EMAILS の人だけ。
+// ログインは Cloudflare Access に任せ、Worker は Access の JWT を確かめる（src/access.ts）。
 import { bindings, defineConfig, exports } from "cf/config";
 
 export default defineConfig({
@@ -19,7 +19,7 @@ export default defineConfig({
 				"/20*",
 			],
 		},
-		// 人ごとの ToDo とマップ（user:<メールアドレス>）と、ログインのセッション（auth）。
+		// 人ごとの ToDo とマップ。Access のメールアドレスごとに1つ。
 		exports: {
 			DailyStore: exports.durableObject({ storage: "sqlite" }),
 		},
@@ -29,12 +29,10 @@ export default defineConfig({
 				exportName: "DailyStore",
 			}),
 			ASSETS: bindings.assets(),
-			// Google の OAuth クライアント（本体と同じものを使える。リダイレクト URI に /api/auth/google/callback を足す）。
-			// 手元の 127.0.0.1 で GOOGLE_CLIENT_ID が無ければ、認証なしで動く。
-			GOOGLE_CLIENT_ID: bindings.secret(),
-			GOOGLE_CLIENT_SECRET: bindings.secret(),
-			// ログインできるメールアドレス（カンマ区切り）。空ならだれもログインできない。
-			ALLOWED_EMAILS: bindings.secret(),
+			// Cloudflare Access のチームのドメイン（https://<team>.cloudflareaccess.com）と、アプリの AUD タグ。
+			// 無ければ API は 503 を返す（手元の 127.0.0.1 だけは認証なしで動く）。
+			ACCESS_TEAM_DOMAIN: bindings.secret(),
+			ACCESS_AUD: bindings.secret(),
 		},
 	},
 });

@@ -1,6 +1,5 @@
 // 1人分の日次 ToDo とマップ。マップの保存と API は mindmap-server（packages/mindmap-server）に任せ、ここは ToDo だけを持つ。
 //
-// - /api/auth/...        ログイン（この DO の名前が auth のときだけ使う。src/auth.ts）
 // - /api/mindmap/...     <mind-map> の保存（httpStore が呼ぶ）。マップ名は daily-2026-11-27
 // - GET    /api/todos?day=&today=   その日の ToDo。day が today で初めて開いたときは、前に ToDo がある日の未完了を持ち越す
 // - POST   /api/todos    {day, text}            末尾に足す
@@ -8,7 +7,6 @@
 // - DELETE /api/todos    {id}                   消す
 import { DurableObject } from 'cloudflare:workers';
 import { MindmapMaps, HttpError, json, readJson } from '@t-nakatani/mindmap-server';
-import { Auth } from './auth.ts';
 
 export interface Todo { id: number; day: string; text: string; done: boolean; position: number; carriedFrom: string | null; carriedTo: string | null }
 type Row = { id: number; day: string; text: string; done: number; position: number; carried_from: string | null; carried_to: string | null };
@@ -30,7 +28,6 @@ const toTodo = (r: Row): Todo => ({ id: r.id, day: r.day, text: r.text, done: !!
 export class DailyStore extends DurableObject<Env> {
   sql: SqlStorage;
   maps: MindmapMaps;
-  #auth: Auth | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -73,7 +70,6 @@ export class DailyStore extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const p = url.pathname;
-    if (p.startsWith('/api/auth/')) return (this.#auth ??= new Auth(this.sql, this.env)).route(request);
     if (p.startsWith('/api/mindmap/')) return this.maps.handle(request, p.slice('/api/mindmap'.length));
     try {
       if (p === '/api/todos') {
