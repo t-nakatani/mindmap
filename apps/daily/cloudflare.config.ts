@@ -17,6 +17,11 @@ export default defineConfig({
 			runWorkerFirst: [
 				"/api/*",
 				"/20*",
+				"/authorize",
+				"/mcp",
+				"/token",
+				"/register",
+				"/.well-known/*",
 			],
 		},
 		// 人ごとの ToDo とマップ。Access のメールアドレスごとに1つ。
@@ -29,6 +34,8 @@ export default defineConfig({
 				exportName: "DailyStore",
 			}),
 			ASSETS: bindings.assets(),
+			// エージェント（/mcp）の OAuth のクライアント・許可・トークン（workers-oauth-provider が使う。値はハッシュか暗号化で置かれる）
+			OAUTH_KV: bindings.kv(),
 			// Cloudflare Access のチームのドメイン（https://<team>.cloudflareaccess.com）と、アプリの AUD タグ。
 			// 無ければ API は 503 を返す（手元の 127.0.0.1 だけは認証なしで動く）。
 			ACCESS_TEAM_DOMAIN: bindings.secret(),

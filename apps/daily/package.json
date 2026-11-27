@@ -17,6 +17,7 @@
     "wrangler": "4.152.0"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^1.4.0",
     "@t-nakatani/mindmap-element": "0.1.0",
     "@t-nakatani/mindmap-server": "0.1.0"
   }
