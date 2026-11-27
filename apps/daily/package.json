@@ -1,0 +1,15 @@
+{
+  "name": "daily-todo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "日次 ToDo。1日1ページで、先頭に <mind-map> を置く。",
+  "scripts": {
+    "element": "rm -rf public/mindmap-element && cp -R ../../packages/mindmap-element/src public/mindmap-element",
+    "dev": "npm run element && mise exec -- cf dev",
+    "build": "npm run element && mise exec -- cf build",
+    "deploy": "npm run element && mise exec -- cf deploy",
+    "types": "mise exec -- cf workers types",
+    "typecheck": "npm run types && tsc -p tsconfig.json"
+  }
+}

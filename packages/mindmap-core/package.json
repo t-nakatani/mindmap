@@ -1,0 +1,9 @@
+{
+  "name": "@t-nakatani/mindmap-core",
+  "version": "0.1.0",
+  "description": "マインドマップの形と操作（DOM なし）。サーバーと画面で共有する。",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "files": ["src"],
+  "license": "UNLICENSED"
+}

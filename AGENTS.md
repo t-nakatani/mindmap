@@ -175,5 +175,7 @@ printf -- '- 法務\n- 技術\n' | mindmap import - --under リスク   # 標準
   リンクのあるノードは `url`（http か https）を持つ。リンク先の題名・説明・画像・アイコンは保存せず、`/api/unfurl` が領域ごとに1週間覚えておく。
   `parentId` が `null` のノードが中心ノードで、その `dx, dy` はキャンバス上の位置、`layout` は配置（`both`・`right`・`left`、省略時は `both`）。ほかのノードは位置を持たず、`dx, dy` は常に 0（配置は自動）。
   中心ノードが1つだった頃の `rootId`・`rootPos` と、自由に置けた頃の `pinned` は、読み込むときに自動で直す。
+- `packages/`: 配れる部品。`mindmap-element`（`<mind-map>` と store）、`mindmap-core`（マップの形と操作。`lib/` はここへの転送だけ）、`mindmap-server`（保存側 `MindmapMaps`、`src/unfurl.ts` もここへの転送）。説明は `packages/README.md`。
+- `apps/daily/`: 部品を使う日次 ToDo（別の Worker `daily-todo`）。説明は `apps/daily/README.md`。
 - 型の確認は `npm run typecheck`。
 - Cloudflare の操作（開発サーバー・デプロイ・secret・型の生成）は wrangler ではなく `cf` で行う（Node 26.12 以上が要るので `npm run dev` などの scripts か `mise exec -- npx cf <コマンド>`）。このフォルダには個人アカウントの profile `personal` を結び付けてある。

@@ -1,0 +1,10 @@
+{
+  "name": "@t-nakatani/mindmap-server",
+  "version": "0.1.0",
+  "description": "<mind-map> の保存側。Cloudflare の Durable Object の中で、httpStore が呼ぶ API を受ける。",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "files": ["src"],
+  "dependencies": { "@t-nakatani/mindmap-core": "0.1.0" },
+  "license": "UNLICENSED"
+}

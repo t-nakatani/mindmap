@@ -14,5 +14,5 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["src", "lib", "cloudflare.config.ts", ".cloudflare/types"]
+  "include": ["src", "lib", "packages/mindmap-core/src", "packages/mindmap-server/src", "cloudflare.config.ts", ".cloudflare/types"]
 }
