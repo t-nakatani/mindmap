@@ -236,19 +236,20 @@ async function loadTodos() {
     if (want === day) { todos = data.todos; render(); }
   } catch {}
 }
+// 返事が届くまでに別の日へ移っていたら、その返事は表に出さない
+function take(data) { if (data && data.day === day) { todos = data.todos; render(); } }
 async function patch(id, change) {
-  try { const data = await api('PATCH', '/api/todos', { id, ...change }); todos = data.todos; } catch {}
-  render();
+  try { take(await api('PATCH', '/api/todos', { id, ...change })); } catch { render(); }
 }
 async function remove(id) {
-  try { const data = await api('DELETE', '/api/todos', { id }); todos = data.todos; render(); } catch {}
+  try { take(await api('DELETE', '/api/todos', { id })); } catch {}
 }
 $('new').addEventListener('keydown', async e => {
   if (e.key !== 'Enter' || e.isComposing) return;
   const text = $('new').value.trim();
   if (!text) return;
   $('new').value = '';
-  try { const data = await api('POST', '/api/todos', { day, text }); todos = data.todos; render(); } catch { $('new').value = text; }
+  try { take(await api('POST', '/api/todos', { day, text })); } catch { $('new').value = text; }
 });
 
 function show() {

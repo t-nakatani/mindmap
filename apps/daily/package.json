@@ -11,5 +11,8 @@
     "deploy": "npm run element && mise exec -- cf deploy",
     "types": "mise exec -- cf workers types",
     "typecheck": "npm run types && tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
   }
 }

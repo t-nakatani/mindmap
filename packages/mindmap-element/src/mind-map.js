@@ -57,6 +57,8 @@ function mount(host, root) {
   const meas = document.createElement('canvas').getContext('2d');
   const vw = () => svg.getBoundingClientRect().width;
   const vh = () => svg.getBoundingClientRect().height;
+  // キャンバスの中央（画面の座標。toWorld・zoomAt はポインターと同じ画面の座標を受ける）
+  const center = () => { const r = svg.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
 
   // 親のないノードが中心ノード。中心ノードはいくつでも置けて、dx, dy がキャンバス上の位置になる。
   let nodes = new Map();
@@ -131,6 +133,7 @@ function mount(host, root) {
   // 読み込んだときの版番号 version を添えて丸ごと書く。別の場所で先に書かれていたら、その最新を取り込む（自分の変更は ⌘Z で戻せる）。
   let store = null, unsubscribe = null;
   let lastSaved = '', saveTimer = null, inflight = null, version = 0;
+  let inflightP = null; // 送っている save の返事（store を替えるとき、前の store への残りを送るのに待つ）
   function save() {
     if (readOnly || !store) return;
     host.dispatchEvent(new CustomEvent('mindmap-change', { detail: { map: serialize() } }));
@@ -146,11 +149,12 @@ function mount(host, root) {
     const s = store;
     inflight = text;
     try {
-      const res = await s.save(map, version);
+      inflightP = s.save(map, version);
+      const res = await inflightP;
       if (s !== store) return; // 送っている間に store が替わった
       if (res && res.ok) { if (res.version > version) { version = res.version; lastSaved = text; } }
       else if (res && res.conflict && res.map && res.version > version) applyExternal(res.map, res.version);
-    } catch (e) { /* 届かなければ次の変更でもう一度送る */ } finally { inflight = null; }
+    } catch (e) { /* 届かなければ次の変更でもう一度送る */ } finally { inflight = null; inflightP = null; }
   }
   function onRemote(msg) {
     if (!msg || !msg.map || !Array.isArray(msg.map.nodes) || msg.version <= version) return;
@@ -161,9 +165,19 @@ function mount(host, root) {
   }
   async function setStore(s) {
     if (unsubscribe) { try { unsubscribe(); } catch (e) { /* 無視 */ } unsubscribe = null; }
-    // 待っている書き込みは前の store へ送ってから替える（flush は await の前に中身と store を取る）
-    if (saveTimer && store && inflight === null) { clearTimeout(saveTimer); flush(); }
+    // まだ送っていない変更は、前の store へ送ってから替える。送っている途中なら、その返事の版を土台にして続けて送る
     clearTimeout(saveTimer); saveTimer = null;
+    if (store && !readOnly) {
+      const prev = store, map = serialize(), text = JSON.stringify(map);
+      if (text !== lastSaved && text !== inflight) {
+        const pending = inflightP, base = version;
+        (async () => {
+          let v = base;
+          if (pending) { try { const r = await pending; if (r && r.ok && r.version > v) v = r.version; } catch (e) { /* 無視 */ } }
+          try { await prev.save(map, v); } catch (e) { /* 届かなければあきらめる */ }
+        })();
+      }
+    }
     store = s;
     if (!s) return;
     let got = null;
@@ -539,7 +553,7 @@ function mount(host, root) {
         return r;
       });
       layout();
-      const x = toWorld(vw() / 2, vh() / 2).x;
+      const x = toWorld(...center()).x;
       for (const r of added) { const h = subH(r); r.dx = x; r.dy = bottom + 80 + h / 2; bottom = r.dy + h / 2; }
       first = added[0];
       view.ty = vh() / 2 - first.dy * view.s;
@@ -806,7 +820,7 @@ function mount(host, root) {
       x = minX - BOARD_PAD; y = minY - BOARD_PAD - BOARD_TITLE;
       w = maxX - minX + BOARD_PAD * 2; h = maxY - minY + BOARD_PAD * 2 + BOARD_TITLE;
     } else {
-      const c = toWorld(vw() / 2, vh() / 2);
+      const c = toWorld(...center());
       w = 800; h = 500; x = c.x - w / 2; y = c.y - h / 2;
     }
     const b = { id: 'b' + (uid++), name: `ボード ${boards.length + 1}`, x, y, w, h };
@@ -1465,8 +1479,8 @@ function mount(host, root) {
       return;
     }
     if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (!readOnly) e.shiftKey ? redo() : undo(); return; }
-    if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1.2); return; }
-    if (meta && e.key === '-') { e.preventDefault(); zoomAt(vw() / 2, vh() / 2, 1 / 1.2); return; }
+    if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomAt(...center(), 1.2); return; }
+    if (meta && e.key === '-') { e.preventDefault(); zoomAt(...center(), 1 / 1.2); return; }
     if (meta && e.key === '0') { e.preventDefault(); fitView(); return; }
     if (meta && e.key === 'Enter') { e.preventDefault(); if (selectedId) openLink(selectedId); return; }
     // 閲覧のみでは、移動と表示とコピーだけ受ける
@@ -1511,8 +1525,8 @@ function mount(host, root) {
   // ---------- ツールバー ----------
   $('btn-add-board').addEventListener('click', addBoard);
   linkButton.addEventListener('click', openLinkEditor);
-  $('btn-zoom-in').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1.2));
-  $('btn-zoom-out').addEventListener('click', () => zoomAt(vw() / 2, vh() / 2, 1 / 1.2));
+  $('btn-zoom-in').addEventListener('click', () => zoomAt(...center(), 1.2));
+  $('btn-zoom-out').addEventListener('click', () => zoomAt(...center(), 1 / 1.2));
   $('btn-fit').addEventListener('click', fitView);
   // 配置のボタンは、選択中のノードが属するマップに効く
   for (const b of layoutButtons) b.addEventListener('click', () => {
