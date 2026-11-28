@@ -1445,29 +1445,60 @@
     const s = window.getSelection();
     return !!(s && !s.isCollapsed && !editor.contains(s.anchorNode));
   }
-  // ⌘C・⌘X・⌘V は copy・cut・paste のイベントで受ける。イベントが来ないブラウザ向けに、キーを押した直後に代わりを走らせる。
-  let pendingClip = null;
-  function onClipKey(key) {
-    pendingClip = key;
+  // ⌘C・⌘X・⌘V は copy・cut・paste のイベントで受ける。イベントが来ないブラウザ向けに、キーを押して少し待ってから代わりを走らせる。
+  // キーとイベントの届く順と間隔はブラウザで違う（macOS の Chrome ではイベントが遅れて届くことがある）。
+  // そこで、1回のキーと、その前後 CLIP_PAIR_MS に届いた同じ種類のイベントを「1回の操作」として組にし、操作は組ごとに1度だけ行う。
+  // 繰り返すと、切り取りで選択が移った先の枝まで消え、貼り付けでは貼ったものの下にもう一度貼っていた。
+  const CLIP_FALLBACK_MS = 100, CLIP_PAIR_MS = 1000;
+  let clipOp = null; // { key, at, keyed, evented, done }
+  const clipDebug = /[?&]debug=clip\b/.test(location.search) ? [] : null;
+  function clipLog(msg) {
+    if (!clipDebug) return;
+    clipDebug.push(Math.round(performance.now()) + ' ' + msg);
+    let box = document.getElementById('clip-debug');
+    if (!box) { box = document.createElement('pre'); box.id = 'clip-debug'; box.style.cssText = 'position:fixed;left:8px;bottom:64px;z-index:9;margin:0;padding:8px;max-height:40vh;overflow:auto;font:11px/1.4 monospace;background:rgba(0,0,0,.75);color:#fff;border-radius:6px;pointer-events:none'; document.body.appendChild(box); }
+    box.textContent = clipDebug.slice(-20).join('\n');
+  }
+  function sameClipOp(key) { return !!clipOp && clipOp.key === key && performance.now() - clipOp.at < CLIP_PAIR_MS; }
+  function onClipKey(key, repeat) {
+    clipLog('keydown ' + key + (repeat ? ' repeat' : ''));
+    // 押しっぱなしの自動の繰り返しでは、もう一度写したり貼ったりしない
+    if (repeat) return;
+    // イベントが先に届いて済んでいる（キーがあとから来た）
+    if (sameClipOp(key) && clipOp.evented && !clipOp.keyed) { clipOp.keyed = true; clipLog('  -> already done by event'); return; }
+    const op = clipOp = { key, at: performance.now(), keyed: true, evented: false, done: false };
     setTimeout(() => {
-      if (pendingClip !== key) return;
-      pendingClip = null;
+      if (clipOp !== op || op.done) return;
+      op.done = true;
+      clipLog('fallback ' + key);
       if (key === 'v') { if (clip) pasteTrees(clip.trees); return; }
       const text = copySelected(key === 'x');
       if (text !== null && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
-    }, 0);
+    }, CLIP_FALLBACK_MS);
+  }
+  // イベントが操作をしてよいか。同じ組で代わりがもう済んでいれば false
+  function claimClipEvent(key) {
+    if (sameClipOp(key) && !clipOp.evented) {
+      clipOp.evented = true;
+      if (clipOp.done) { clipLog(key + ' event -> already done by fallback'); return false; }
+      clipOp.done = true; clipLog(key + ' event'); return true;
+    }
+    clipOp = { key, at: performance.now(), keyed: false, evented: true, done: true };
+    clipLog(key + ' event (no key)');
+    return true;
   }
   for (const type of ['copy', 'cut']) document.addEventListener(type, e => {
-    pendingClip = null;
     if (textClipboard(e)) return;
-    const text = copySelected(type === 'cut');
+    const run = claimClipEvent(type === 'cut' ? 'x' : 'c');
+    // 代わりが写し終えている。クリップボードにはその中身を書くだけにする
+    const text = run ? copySelected(type === 'cut') : (clip ? clip.text : null);
     if (text === null) return;
     e.preventDefault();
     e.clipboardData.setData('text/plain', text);
   });
   document.addEventListener('paste', e => {
-    pendingClip = null;
     if (readOnly || textClipboard(e)) return;
+    if (!claimClipEvent('v')) { e.preventDefault(); return; }
     const text = e.clipboardData.getData('text/plain').replace(/\r\n/g, '\n');
     const trees = clip && text.trim() === clip.text.trim() ? clip.trees : parseOutline(text);
     if (!trees.length) return;
@@ -2360,7 +2391,7 @@
     // 閲覧のみでは、移動と表示とコピーだけ受ける
     if (readOnly) {
       if (e.key.startsWith('Arrow') && !meta && selectedId) { e.preventDefault(); navigate(e.key); }
-      else if (meta && !e.altKey && ['c', 'x'].includes(e.key.toLowerCase())) onClipKey(e.key.toLowerCase());
+      else if (meta && !e.altKey && ['c', 'x'].includes(e.key.toLowerCase())) onClipKey(e.key.toLowerCase(), e.repeat);
       else if (e.key === 'Escape') { selectedId = null; clearMulti(); requestDraw(); }
       else if (e.key === 'Tab' && !selectedId) { e.preventDefault(); selectedId = roots()[0].id; requestDraw(); }
       return;
@@ -2370,7 +2401,7 @@
     if (meta && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); if (selectedId) setSide(selectedId, e.key === 'ArrowLeft' ? 'left' : 'right'); return;
     }
-    if (meta && !e.altKey && ['c', 'x', 'v'].includes(e.key.toLowerCase())) { onClipKey(e.key.toLowerCase()); return; }
+    if (meta && !e.altKey && ['c', 'x', 'v'].includes(e.key.toLowerCase())) { onClipKey(e.key.toLowerCase(), e.repeat); return; }
     if (meta) return;
     if (multiActive()) {
       if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteMulti(); }
