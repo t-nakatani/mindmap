@@ -239,12 +239,17 @@
   #map-footer .btn { width: 100%; justify-content: flex-start; padding: 0 var(--space-8); }
   #map-footer .map-row { min-height: var(--size-control); padding: 0 0 0 var(--space-8); }
   #map-footer .map-row > .icon { visibility: visible; color: var(--color-text-primary); }
-  /* ノードの右クリックメニュー。項目はボタンを足すだけで増やせる */
-  .context-menu { position: absolute; z-index: 4; display: none; flex-direction: column; min-width: 180px;
-    padding: var(--space-4); border-radius: var(--radius-lg); background: var(--color-bg-popover);
-    border: 1px solid var(--color-border-panel); box-shadow: var(--shadow-popover); }
-  .context-menu.show { display: flex; }
-  .context-menu .btn { width: 100%; justify-content: flex-start; padding: 0 var(--space-8); }
+  /* ノードの右クリックメニュー。開閉・位置・キー操作は UI SDK の ui-menu に任せ、見た目だけここで決める。
+     項目は ui-menu-item を足すだけで増やせる */
+  #node-menu ui-menu-content { min-width: 180px; margin: 0; padding: var(--space-4); border-radius: var(--radius-lg);
+    background: var(--color-bg-popover); color: var(--color-text-primary); border: 1px solid var(--color-border-panel);
+    box-shadow: var(--shadow-popover); outline: none; }
+  #node-menu ui-menu-content:not([hidden]) { display: flex; flex-direction: column; }
+  #node-menu ui-menu-item { height: var(--size-control); box-sizing: border-box; display: flex; align-items: center;
+    padding: 0 var(--space-8); border-radius: var(--radius-md); font: 400 13px/18px var(--font-sans); white-space: nowrap;
+    cursor: pointer; outline: none; user-select: none; }
+  #node-menu ui-menu-item[data-highlighted] { background: var(--color-bg-hover); }
+  #node-menu ui-menu-item[data-disabled] { opacity: .4; cursor: default; background: transparent; }
   /* リンクのパネル（Figma: Panel/Link・Panel/Link edit）。ノードのそばに出すので、位置は transform で決める */
   #link-panel, #link-edit { left: 0; top: 0; right: auto; z-index: 2; width: min(340px, calc(100% - 16px)); max-height: none;
     padding: var(--space-12) var(--space-12) var(--space-8); gap: var(--space-8); }
@@ -474,10 +479,12 @@
   <div id="account" hidden><span><span id="account-email"></span> でログイン中</span><button id="btn-logout" class="btn" type="button">ログアウト</button></div>
 </div>
 
-<!-- ノードの右クリックメニュー -->
-<div id="node-menu" class="context-menu" role="menu" aria-label="ノード">
-  <button type="button" class="btn" role="menuitem" data-act="collapse-under">この下をしまう</button>
-</div>
+<!-- ノードの右クリックメニュー。UI SDK（@ui-sdk/web）の Menu で、開くのは svg の contextmenu から api.open() で行う -->
+<ui-menu id="node-menu">
+  <ui-menu-content aria-label="ノード" collision-padding="8" hidden>
+    <ui-menu-item value="collapse-under">この下をしまう</ui-menu-item>
+  </ui-menu-content>
+</ui-menu>
 
 <div id="login">
   <div class="login-card">
@@ -489,6 +496,8 @@
   </div>
 </div>
 
+<!-- UI SDK はバージョンを固定して読む。上げるときは右クリックメニューを一通り確かめる -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/@ui-sdk/web@0.1.0-beta.19/browser/web/menu.js"></script>
 <script>
 (() => {
   'use strict';
@@ -821,7 +830,6 @@
   // メニューの外を押したら閉じる
   document.addEventListener('pointerdown', e => {
     if (isMapMenuOpen() && !mapMenu.contains(e.target) && !mapBtn.contains(e.target) && !e.target.closest('#btn-add-map')) closeMapMenu();
-    if (nodeMenu.classList.contains('show') && !nodeMenu.contains(e.target)) closeNodeMenu();
   }, true);
   mapSearch.addEventListener('input', () => { resetMenuModes(); menu.active = 0; renderMapMenu(); });
   mapList.addEventListener('pointermove', e => {
@@ -1305,34 +1313,23 @@
     if (selectedId && selectedId !== n.id && subtreeIds(n).has(selectedId)) selectedId = n.id;
     commit();
   }
+  // ノードの右クリックメニュー（UI SDK の ui-menu）。位置・画面端での折り返し・矢印キー・Esc・外側を押して閉じるのは ui-menu が受け持つ。
+  // 読み込み前（CDN が遅い・届かない）は open が undefined なので、閉じているものとして扱う。
+  function isNodeMenuOpen() { return nodeMenu.open === true; }
   function closeNodeMenu() {
-    if (!nodeMenu.classList.contains('show')) return false;
-    nodeMenu.classList.remove('show');
+    if (!isNodeMenuOpen()) return false;
+    nodeMenu.api.close();
     return true;
   }
-  // 右クリックのボタンを離した瞬間に、開いたばかりの項目を押したことにしない
-  let nodeMenuOpenedAt = 0, nodeMenuId = null;
   function openNodeMenu(id, x, y) {
-    nodeMenuOpenedAt = performance.now();
-    nodeMenuId = id;
-    const item = nodeMenu.querySelector('[data-act=collapse-under]');
-    item.disabled = !canCollapseUnder(id);
-    nodeMenu.style.left = x + 'px';
-    nodeMenu.style.top = y + 'px';
-    nodeMenu.classList.add('show');
-    const pad = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-8'));
-    const r = nodeMenu.getBoundingClientRect();
-    nodeMenu.style.left = Math.max(pad, Math.min(x, window.innerWidth - r.width - pad)) + 'px';
-    nodeMenu.style.top = Math.max(pad, Math.min(y, window.innerHeight - r.height - pad)) + 'px';
-    if (!item.disabled) item.focus({ preventScroll: true });
+    if (!nodeMenu.api) return;
+    nodeMenu.querySelector('ui-menu-item[value=collapse-under]').toggleAttribute('disabled', !canCollapseUnder(id));
+    nodeMenu.api.open({ payload: id, anchor: { x, y } });
   }
   nodeMenu.addEventListener('contextmenu', e => e.preventDefault());
-  nodeMenu.addEventListener('click', e => {
-    if (performance.now() - nodeMenuOpenedAt < 300) return;
-    const act = e.target.closest('[data-act]');
-    if (!act || act.disabled) return;
-    closeNodeMenu();
-    if (act.dataset.act === 'collapse-under') collapseUnder(nodeMenuId);
+  nodeMenu.addEventListener('action', e => {
+    const id = nodeMenu.api.getPayload();
+    if (e.detail.value === 'collapse-under' && id && nodes.has(id)) collapseUnder(id);
   });
   function descendantCount(n) { let c = 0; for (const id of n.children) c += 1 + descendantCount(nodes.get(id)); return c; }
 
@@ -2337,12 +2334,12 @@
   }
   window.addEventListener('keydown', e => {
     // メニューが開いているあいだは、ノードの削除や編集にキーを渡さない
-    if (nodeMenu.classList.contains('show') && !(e.target.closest && e.target.closest('#node-menu'))) {
+    if (isNodeMenuOpen() && !(e.target.closest && e.target.closest('#node-menu'))) {
       closeNodeMenu();
       e.preventDefault();
       return;
     }
-    if (e.target === spaceSelect || (e.target.closest && e.target.closest('.popover, .context-menu'))) return;
+    if (e.target === spaceSelect || (e.target.closest && e.target.closest('.popover, #node-menu'))) return;
     const meta = e.metaKey || e.ctrlKey;
     if (editingId) {
       // 日本語入力の変換中や確定の Enter・Esc・Tab は IME に任せる。Safari は確定の Enter で isComposing が false になるので keyCode も見る
