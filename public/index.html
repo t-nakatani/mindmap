@@ -498,6 +498,22 @@
 
 <!-- UI SDK はバージョンを固定して読む。上げるときは右クリックメニューを一通り確かめる -->
 <script type="module" src="https://cdn.jsdelivr.net/npm/@ui-sdk/web@0.1.0-beta.19/browser/web/menu.js"></script>
+<script type="module">
+  // タッチとペンでは、ノードを長押しすると右クリックメニューを開く（iOS は長押しで contextmenu を出さないため）。
+  // 長押しの判定（時間・指のずれ・iOS の吹き出しを消す）は UI SDK の bindHold に任せ、開くのは右クリックと同じ処理に渡す。
+  import { bindHold } from 'https://cdn.jsdelivr.net/npm/@ui-sdk/web@0.1.0-beta.19/browser/web/core.js';
+  const canvas = document.getElementById('canvas');
+  // ポインタは svg に捕捉されるので、押した位置から要素を引き直す
+  const nodeAt = e => { const hit = document.elementFromPoint(e.clientX, e.clientY); return hit && hit.closest && hit.closest('.node'); };
+  bindHold(canvas, {
+    keys: [],
+    onPress: ({ event, input }) => (input === 'touch' || input === 'pen') && !!nodeAt(event),
+    onHold: ({ event }) => {
+      const g = nodeAt(event);
+      if (g) g.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: event.clientX, clientY: event.clientY }));
+    },
+  });
+</script>
 <script>
 (() => {
   'use strict';
